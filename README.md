@@ -1,6 +1,6 @@
 # swift-authentication
 
-Firebase Authentication と Google Sign-In をサポートした Swift 製認証パッケージ
+Firebase Authentication、Google Sign-In、Apple Sign-In をサポートした Swift 製認証パッケージ
 
 ![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)
 ![Platforms](https://img.shields.io/badge/Platforms-iOS%2017.0+%20%7C%20macOS%2014.0+-blue.svg)
@@ -10,7 +10,7 @@ Firebase Authentication と Google Sign-In をサポートした Swift 製認証
 
 ## 概要
 
-`swift-authentication` は、Swift アプリケーションで Firebase Authentication と Google Sign-In を簡単に統合するためのパッケージです。iOS および macOS プラットフォームに対応し、モダンな async/await をサポートしています。
+`swift-authentication` は、Swift アプリケーションで Firebase Authentication、Google Sign-In、Apple Sign-In を簡単に統合するためのパッケージです。iOS および macOS プラットフォームに対応し、モダンな async/await をサポートしています。
 
 ## 必要要件
 
@@ -33,7 +33,9 @@ Firebase Authentication と Google Sign-In をサポートした Swift 製認証
 
 1. [Firebase Console](https://console.firebase.google.com) で新しいプロジェクトを作成
 2. Firebase Authentication を有効化
-3. Google Sign-In プロバイダーを有効化
+3. 使用するプロバイダーを有効化：
+   - Google Sign-In プロバイダー
+   - Apple Sign-In プロバイダー (iOS のみ)
 
 ### 2. GoogleService-Info.plist の取得
 
@@ -43,7 +45,7 @@ Firebase Authentication と Google Sign-In をサポートした Swift 製認証
 4. Xcode プロジェクトのルートに追加
 5. アプリのターゲットに含まれていることを確認
 
-### 3. URL スキームの設定
+### 3. URL スキームの設定（Google Sign-In 用）
 
 `Info.plist` に Google Sign-In 用の URL スキームを追加：
 
@@ -62,7 +64,16 @@ Firebase Authentication と Google Sign-In をサポートした Swift 製認証
 
 > **重要**: `REVERSED_CLIENT_ID` の値は `GoogleService-Info.plist` から取得してください。
 
-### 4. バックエンド API のセットアップ
+### 4. Apple Sign-In の設定（iOS のみ）
+
+Apple Sign-In を使用する場合：
+
+1. Apple Developer で App ID に "Sign In with Apple" Capability を追加
+2. Xcode の Signing & Capabilities で "Sign in with Apple" を追加
+
+> **注意**: macOS では Apple Sign-In は利用できません。macOS では Google Sign-In のみ使用できます。
+
+### 5. バックエンド API のセットアップ
 
 **必須 API エンドポイント**: **POST `/auth/initialize`** (パスは任意)
 
@@ -79,7 +90,7 @@ Firebase Authentication と Google Sign-In をサポートした Swift 製認証
 
 #### 認証フロー
 
-1. ユーザーが Google でサインイン（Firebase Authentication）
+1. ユーザーが Google または Apple でサインイン（Firebase Authentication）
 2. Firebase から ID トークンを取得
 3. バックエンド API に `/auth/initialize` をリクエスト（Authorization ヘッダーに Bearer トークン）
 4. バックエンドがユーザーを登録/初期化
@@ -323,11 +334,12 @@ let profile: UserProfile = try await apiClient.request(endpoint)
 ## 機能
 
 - ✅ Firebase Authentication 統合
-- ✅ Google Sign-In サポート
+- ✅ Google Sign-In サポート（iOS / macOS）
+- ✅ Apple Sign-In サポート（iOS のみ）
 - ✅ モダンな async/await API
 - ✅ SwiftUI Environment Values 対応
 - ✅ 認証状態の管理
-- ✅ iOS および macOS 対応
+- ✅ iOS 17.0+ および macOS 14.0+ 対応
 
 ## ライセンス
 
