@@ -27,7 +27,7 @@ Firebase Authentication と Google Sign-In をサポートした Swift 製認証
 
 ## 前提条件
 
-このパッケージを使用する前に、以下の準備が必要です：
+このパッケージを使用するには、以下の準備が必要です：
 
 ### 1. Firebase プロジェクトのセットアップ
 
@@ -61,6 +61,31 @@ Firebase Authentication と Google Sign-In をサポートした Swift 製認証
 ```
 
 > **重要**: `REVERSED_CLIENT_ID` の値は `GoogleService-Info.plist` から取得してください。
+
+### 4. バックエンド API のセットアップ
+
+**必須 API エンドポイント**: **POST `/auth/initialize`** (パスは任意)
+
+このエンドポイントは、Firebase 認証後にユーザーをバックエンドに登録・初期化するために使用されます。
+
+#### 必須レスポンス形式（JSON、camelCase）
+
+```json
+{
+  "initialized": true,
+  "message": "User initialized successfully"
+}
+```
+
+#### 認証フロー
+
+1. ユーザーが Google でサインイン（Firebase Authentication）
+2. Firebase から ID トークンを取得
+3. バックエンド API に `/auth/initialize` をリクエスト（Authorization ヘッダーに Bearer トークン）
+4. バックエンドがユーザーを登録/初期化
+5. アプリで認証完了
+
+> **注意**: このパッケージは自動的に Authorization ヘッダーに Firebase ID トークンを付与します。バックエンド側でトークンの検証が必要です。
 
 ## インストール
 
