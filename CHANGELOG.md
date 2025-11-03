@@ -5,6 +5,15 @@
 このフォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づいており、
 このプロジェクトは [Semantic Versioning](https://semver.org/lang/ja/) に準拠しています。
 
+## [1.0.3] - 2025-02-11
+
+### 追加
+- README にバックエンド API 前提条件セクションを追加
+  - 必須 POST `/auth/initialize` エンドポイントを文書化
+  - 必須 JSON レスポンス形式を camelCase で明記
+  - Firebase 認証とバックエンド統合の認証フローを説明
+  - Authorization ヘッダーが自動的に Firebase ID トークンで設定されることを明記
+
 ## [1.0.2] - 2025-02-11
 
 ### 改善
