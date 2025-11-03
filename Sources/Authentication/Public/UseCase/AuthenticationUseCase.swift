@@ -1,5 +1,4 @@
 import Foundation
-import GeneralDomain
 import AuthenticationServices
 
 /// 認証機能の公開ユースケース
@@ -7,12 +6,12 @@ import AuthenticationServices
 /// Firebase認証とバックエンドAPI認証を統合管理します。
 /// 環境値経由で注入して使用してください。
 public protocol AuthenticationUseCase: Sendable {
-    /// 現在ログイン中のユーザーを取得
+    /// 現在の認証状態を確認
     ///
-    /// Firebase認証状態を確認し、ログイン済みユーザーを返します。
+    /// Firebase認証状態を確認し、認証済みかどうかを返します。
     ///
-    /// - Returns: ログイン中のユーザー。未ログインの場合はnil
-    func getCurrentUser() async -> User?
+    /// - Returns: 認証済みの場合はtrue
+    func isAuthenticated() async -> Bool
 
     /// Googleアカウントでサインイン
     ///

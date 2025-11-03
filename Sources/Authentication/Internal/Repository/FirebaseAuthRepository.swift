@@ -1,13 +1,10 @@
 import Foundation
-import GeneralDomain
 @preconcurrency import FirebaseAuth
 @preconcurrency import FirebaseCore
 import GoogleSignIn
 #if canImport(UIKit)
 import UIKit
 #endif
-
-typealias FirebaseUser = FirebaseAuth.User
 
 /// FirebaseAuthの実装（内部使用）
 final class FirebaseAuthRepositoryImpl: AuthRepository {
@@ -17,11 +14,8 @@ final class FirebaseAuthRepositoryImpl: AuthRepository {
         self.auth = Auth.auth()
     }
 
-    func getCurrentUser() async -> GeneralDomain.User? {
-        guard let firebaseUser = auth.currentUser else {
-            return nil
-        }
-        return convertToUser(firebaseUser)
+    func isAuthenticated() async -> Bool {
+        return auth.currentUser != nil
     }
 
     func signInWithGoogle() async -> SignInResult {
@@ -64,10 +58,9 @@ final class FirebaseAuthRepositoryImpl: AuthRepository {
             let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
 
             // Firebaseでサインイン
-            let authResult = try await auth.signIn(with: credential)
-            let user = convertToUser(authResult.user)
+            _ = try await auth.signIn(with: credential)
 
-            return .success(user)
+            return .success
         } catch {
             return .failure(.googleSignInFailed(error))
         }
@@ -88,10 +81,9 @@ final class FirebaseAuthRepositoryImpl: AuthRepository {
                 fullName: nil
             )
 
-            let authResult = try await auth.signIn(with: credential)
-            let user = convertToUser(authResult.user)
+            _ = try await auth.signIn(with: credential)
 
-            return .success(user)
+            return .success
         } catch {
             return .failure(.appleSignInFailed(error))
         }
@@ -119,32 +111,15 @@ final class FirebaseAuthRepositoryImpl: AuthRepository {
         }
     }
 
-    func observeAuthState() -> AsyncStream<GeneralDomain.User?> {
+    func observeAuthState() -> AsyncStream<Bool> {
         AsyncStream { continuation in
             nonisolated(unsafe) let handle = auth.addStateDidChangeListener { _, firebaseUser in
-                if let firebaseUser = firebaseUser {
-                    let user = self.convertToUser(firebaseUser)
-                    continuation.yield(user)
-                } else {
-                    continuation.yield(nil)
-                }
+                continuation.yield(firebaseUser != nil)
             }
 
             continuation.onTermination = { _ in
                 Auth.auth().removeStateDidChangeListener(handle)
             }
         }
-    }
-
-    // MARK: - Private Helpers
-
-    private func convertToUser(_ firebaseUser: FirebaseUser) -> GeneralDomain.User {
-        return GeneralDomain.User(
-            id: firebaseUser.uid,
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName,
-            photoURL: firebaseUser.photoURL?.absoluteString,
-            createdAt: firebaseUser.metadata.creationDate ?? Date()
-        )
     }
 }

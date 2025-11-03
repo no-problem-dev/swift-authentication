@@ -1,10 +1,9 @@
 import Foundation
-import GeneralDomain
 
 /// 認証サービスプロトコル（内部使用）
 protocol AuthService: Sendable {
-    /// 現在ログイン中のユーザーを取得
-    func getCurrentUser() async -> User?
+    /// 現在の認証状態を確認
+    func isAuthenticated() async -> Bool
 
     /// Googleでサインイン
     func signInWithGoogle() async -> SignInResult
@@ -19,7 +18,7 @@ protocol AuthService: Sendable {
     func deleteAccount() async -> DeleteAccountResult
 
     /// 認証状態の監視
-    func observeAuthState() -> AsyncStream<User?>
+    func observeAuthState() -> AsyncStream<Bool>
 }
 
 /// 認証サービスの実装（内部使用）
@@ -30,8 +29,8 @@ final class AuthServiceImpl: AuthService {
         self.authRepository = authRepository
     }
 
-    func getCurrentUser() async -> User? {
-        return await authRepository.getCurrentUser()
+    func isAuthenticated() async -> Bool {
+        return await authRepository.isAuthenticated()
     }
 
     func signInWithGoogle() async -> SignInResult {
@@ -50,7 +49,7 @@ final class AuthServiceImpl: AuthService {
         return await authRepository.deleteAccount()
     }
 
-    func observeAuthState() -> AsyncStream<User?> {
+    func observeAuthState() -> AsyncStream<Bool> {
         return authRepository.observeAuthState()
     }
 }

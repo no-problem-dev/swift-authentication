@@ -1,10 +1,9 @@
 import Foundation
-import GeneralDomain
 
 /// Firebase認証リポジトリプロトコル（内部使用）
 protocol AuthRepository: Sendable {
-    /// 現在ログイン中のユーザーを取得
-    func getCurrentUser() async -> User?
+    /// 現在の認証状態を確認
+    func isAuthenticated() async -> Bool
 
     /// Googleでサインイン
     func signInWithGoogle() async -> SignInResult
@@ -19,5 +18,5 @@ protocol AuthRepository: Sendable {
     func deleteAccount() async -> DeleteAccountResult
 
     /// 認証状態の監視
-    func observeAuthState() -> AsyncStream<User?>
+    func observeAuthState() -> AsyncStream<Bool>
 }

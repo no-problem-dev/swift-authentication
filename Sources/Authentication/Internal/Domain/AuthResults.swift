@@ -1,10 +1,9 @@
 import Foundation
-import GeneralDomain
 
 // MARK: - Auth Results
 
 enum SignInResult {
-    case success(User)
+    case success
     case failure(AuthError)
 }
 

@@ -1,6 +1,5 @@
 import Foundation
 import APIClient
-import GeneralDomain
 import AuthenticationServices
 import CryptoKit
 import GoogleSignIn
@@ -44,7 +43,7 @@ import GoogleSignIn
 ///             Text("マイアプリ")
 ///         }
 ///     },
-///     authenticatedContent: { user in
+///     authenticatedContent: {
 ///         MainTabView()
 ///     }
 /// )
@@ -66,8 +65,8 @@ public struct AuthenticationUseCaseImpl: AuthenticationUseCase {
         self.apiAuthRepository = apiAuthRepository
     }
 
-    public func getCurrentUser() async -> User? {
-        return await authService.getCurrentUser()
+    public func isAuthenticated() async -> Bool {
+        return await authService.isAuthenticated()
     }
 
     public func signInWithGoogle() async throws {
@@ -138,11 +137,11 @@ public struct AuthenticationUseCaseImpl: AuthenticationUseCase {
     public func observeAuthState() -> AsyncStream<AuthenticationState> {
         return AsyncStream { continuation in
             let task = Task {
-                for await user in authService.observeAuthState() {
-                    if let user = user {
+                for await isAuthenticated in authService.observeAuthState() {
+                    if isAuthenticated {
                         do {
                             _ = try await apiAuthRepository.initializeUser()
-                            continuation.yield(.authenticated(user))
+                            continuation.yield(.authenticated)
                         } catch {
                             continuation.yield(.error(error))
                         }

@@ -1,5 +1,4 @@
 import SwiftUI
-import GeneralDomain
 
 /// 認証状態に基づいてコンテンツを出し分けるルートビュー
 ///
@@ -18,14 +17,14 @@ import GeneralDomain
 ///             Text("マイアプリ")
 ///         }
 ///     },
-///     authenticatedContent: { user in MainTabView() }
+///     authenticatedContent: { MainTabView() }
 /// )
 /// .authenticationUseCase(authUseCase)
 /// ```
 public struct AuthenticatedRootView<AuthHeaderContent: View, AuthenticatedContent: View>: View {
     @Environment(\.authenticationUseCase) private var authUseCase
     private let authenticationHeader: AuthHeaderContent
-    private let authenticatedContent: (User) -> AuthenticatedContent
+    private let authenticatedContent: () -> AuthenticatedContent
 
     @State private var authState: AuthenticationState = .checking
 
@@ -35,7 +34,7 @@ public struct AuthenticatedRootView<AuthHeaderContent: View, AuthenticatedConten
     ///   - authenticatedContent: 認証済みの場合に表示するコンテンツ
     public init(
         @ViewBuilder authenticationHeader: () -> AuthHeaderContent,
-        @ViewBuilder authenticatedContent: @escaping (User) -> AuthenticatedContent
+        @ViewBuilder authenticatedContent: @escaping () -> AuthenticatedContent
     ) {
         self.authenticationHeader = authenticationHeader()
         self.authenticatedContent = authenticatedContent
@@ -86,8 +85,8 @@ public struct AuthenticatedRootView<AuthHeaderContent: View, AuthenticatedConten
         case .firebaseAuthenticatedOnly:
             ProgressView("初期化中...")
 
-        case .authenticated(let user):
-            authenticatedContent(user)
+        case .authenticated:
+            authenticatedContent()
 
         case .error(let error):
             VStack(spacing: 16) {
@@ -111,8 +110,8 @@ public struct AuthenticatedRootView<AuthHeaderContent: View, AuthenticatedConten
     @MainActor
     private func checkInitialAuth() async {
         guard let authUseCase = authUseCase else { return }
-        if let user = await authUseCase.getCurrentUser() {
-            authState = .firebaseAuthenticatedOnly(user)
+        if await authUseCase.isAuthenticated() {
+            authState = .firebaseAuthenticatedOnly
         } else {
             authState = .unauthenticated
         }

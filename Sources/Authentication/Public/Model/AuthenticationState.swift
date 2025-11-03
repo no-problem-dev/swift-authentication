@@ -1,10 +1,9 @@
 import Foundation
-import GeneralDomain
 
 /// 認証状態
 ///
 /// Firebase認証とバックエンドAPI認証の状態を表します。
-/// オンボーディングやプロフィール管理はアプリ側の責務として分離されています。
+/// 認証状態のみを管理し、ユーザー情報は別ドメインで管理します。
 public enum AuthenticationState: Sendable, Equatable {
     /// 認証チェック中
     case checking
@@ -17,12 +16,12 @@ public enum AuthenticationState: Sendable, Equatable {
     /// Firebase認証済み（バックエンドAPI認証待ち）
     ///
     /// Firebase認証は完了していますが、バックエンドAPI認証が未完了の状態です。
-    case firebaseAuthenticatedOnly(User)
+    case firebaseAuthenticatedOnly
 
     /// 認証完了
     ///
     /// Firebase認証とバックエンドAPI認証の両方が完了しています。
-    case authenticated(User)
+    case authenticated
 
     /// 認証エラー
     case error(Error)
@@ -35,20 +34,6 @@ public enum AuthenticationState: Sendable, Equatable {
         return false
     }
 
-    /// 認証済みユーザー情報
-    ///
-    /// - Returns: ユーザー情報。未認証の場合はnil
-    public var user: User? {
-        switch self {
-        case .authenticated(let user):
-            return user
-        case .firebaseAuthenticatedOnly(let user):
-            return user
-        default:
-            return nil
-        }
-    }
-
     // Equatable conformance
     public static func == (lhs: AuthenticationState, rhs: AuthenticationState) -> Bool {
         switch (lhs, rhs) {
@@ -56,10 +41,10 @@ public enum AuthenticationState: Sendable, Equatable {
             return true
         case (.unauthenticated, .unauthenticated):
             return true
-        case (.firebaseAuthenticatedOnly(let lUser), .firebaseAuthenticatedOnly(let rUser)):
-            return lUser.id == rUser.id
-        case (.authenticated(let lUser), .authenticated(let rUser)):
-            return lUser.id == rUser.id
+        case (.firebaseAuthenticatedOnly, .firebaseAuthenticatedOnly):
+            return true
+        case (.authenticated, .authenticated):
+            return true
         case (.error, .error):
             return true
         default:
