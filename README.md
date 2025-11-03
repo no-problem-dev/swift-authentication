@@ -12,6 +12,16 @@ Firebase Authentication、Google Sign-In、Apple Sign-In をサポートした S
 
 `swift-authentication` は、Swift アプリケーションで Firebase Authentication、Google Sign-In、Apple Sign-In を簡単に統合するためのパッケージです。認証状態の管理のみに集中し、ユーザー情報の管理は行いません。
 
+### 主な機能
+
+- ✅ **Firebase Authentication 統合** - Firebase との完全な統合
+- ✅ **Google Sign-In サポート** - iOS / macOS 対応
+- ✅ **Apple Sign-In サポート** - iOS のみ
+- ✅ **モダンな async/await API** - Swift 6.0 の並行処理機能をフル活用
+- ✅ **SwiftUI Environment Values 対応** - SwiftUI と完全に統合
+- ✅ **認証状態の管理に特化** - ユーザー情報は管理しないシンプルな設計
+- ✅ **クロスプラットフォーム** - iOS 17.0+ および macOS 14.0+ 対応
+
 ## 必要要件
 
 - iOS 17.0+
@@ -294,16 +304,10 @@ let profile: UserProfile = try await apiClient.request(endpoint)
 - `.authenticated` - 完全認証済み
 - `.error(Error)` - 認証エラー
 
-## 機能
-
-- ✅ Firebase Authentication 統合
-- ✅ Google Sign-In サポート（iOS / macOS）
-- ✅ Apple Sign-In サポート（iOS のみ）
-- ✅ モダンな async/await API
-- ✅ SwiftUI Environment Values 対応
-- ✅ 認証状態の管理に特化（ユーザー情報は管理しない）
-- ✅ iOS 17.0+ および macOS 14.0+ 対応
-
 ## ライセンス
 
 このプロジェクトは MIT ライセンスの下で公開されています。詳細は [LICENSE](LICENSE) ファイルをご覧ください。
+
+## サポート
+
+問題が発生した場合や機能リクエストがある場合は、[GitHub の Issue](https://github.com/no-problem-dev/swift-authentication/issues) を作成してください。
