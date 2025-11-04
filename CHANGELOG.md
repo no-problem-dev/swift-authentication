@@ -5,6 +5,17 @@
 このフォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づいており、
 このプロジェクトは [Semantic Versioning](https://semver.org/lang/ja/) に準拠しています。
 
+## [1.1.2] - 2025-11-04
+
+### 追加
+- DocC ドキュメントの自動生成と GitHub Pages への公開機能を追加
+  - Swift DocC Plugin を依存関係に追加
+  - GitHub Actions ワークフローで自動的にドキュメントを生成・デプロイ
+  - README に完全なドキュメントへのリンクを追加 (https://no-problem-dev.github.io/swift-authentication/documentation/authentication/)
+
+### 変更
+- ドキュメントへのアクセシビリティを向上
+
 ## [1.0.3] - 2025-02-11
 
 ### 追加
