@@ -82,11 +82,11 @@ $(cat changelog_section.md)
 
 ## Installation
 
-\`\`\`swift
+```swift
 dependencies: [
     .package(url: "https://github.com/no-problem-dev/swift-authentication.git", .upToNextMajor(from: "${VERSION}"))
 ]
-\`\`\`
+```
 
 ## Links
 - [CHANGELOG](https://github.com/no-problem-dev/swift-authentication/blob/main/CHANGELOG.md)
