@@ -71,3 +71,5 @@
 [未リリース]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.3...HEAD
 [1.1.3]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/no-problem-dev/swift-authentication/compare/v1.0.3...v1.1.2
+
+<!-- Auto-generated on 2025-11-09T05:08:08Z by release workflow -->
