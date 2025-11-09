@@ -5,6 +5,15 @@
 このフォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づいており、
 このプロジェクトは [Semantic Versioning](https://semver.org/lang/ja/) に準拠しています。
 
+## [未リリース]
+
+なし
+
+## [1.1.3] - 2025-11-09
+
+### 修正
+- 自動リリースワークフローのメッセージを完全に日本語に統一（PRディスクリプション、リリースノート、ログメッセージ）
+
 ## [1.1.2] - 2025-11-04
 
 ### 追加
@@ -58,3 +67,7 @@
 - SwiftUI Environment Values 対応
 - 認証状態の管理
 - iOS 17.0+ および macOS 14.0+ サポート
+
+[未リリース]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.3...HEAD
+[1.1.3]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.2...v1.1.3
+[1.1.2]: https://github.com/no-problem-dev/swift-authentication/compare/v1.0.3...v1.1.2
