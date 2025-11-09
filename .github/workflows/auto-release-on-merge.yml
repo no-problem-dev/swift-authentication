@@ -1,0 +1,174 @@
+name: Auto Release on Merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  auto-release:
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Extract version from branch name
+        id: version
+        run: |
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          VERSION_TAG="${BRANCH_NAME#release/}"
+          VERSION="${VERSION_TAG#v}"
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "version_tag=$VERSION_TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Validate CHANGELOG entry
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if ! grep -q "## \[$VERSION\]" CHANGELOG.md; then
+            echo "ERROR: CHANGELOG.md missing version [$VERSION]"
+            exit 1
+          fi
+
+      - name: Create and push tag
+        run: |
+          VERSION_TAG="${{ steps.version.outputs.version_tag }}"
+          if git rev-parse "$VERSION_TAG" >/dev/null 2>&1; then
+            echo "Tag already exists, skipping"
+            exit 0
+          fi
+          git tag "$VERSION_TAG"
+          git push origin "$VERSION_TAG"
+
+      - name: Extract changelog for release notes
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.version_tag }}"
+          if grep -q "## \[$VERSION\]" CHANGELOG.md; then
+            START_LINE=$(grep -n "## \[$VERSION\]" CHANGELOG.md | cut -d: -f1)
+            NEXT_LINE=$(tail -n +$((START_LINE + 1)) CHANGELOG.md | grep -n "^## \[" | head -1 | cut -d: -f1)
+            if [ -n "$NEXT_LINE" ]; then
+              END_LINE=$((START_LINE + NEXT_LINE - 1))
+              sed -n "${START_LINE},${END_LINE}p" CHANGELOG.md > changelog_section.md
+            else
+              sed -n "${START_LINE},\$p" CHANGELOG.md > changelog_section.md
+            fi
+            sed -i '1d' changelog_section.md
+            sed -i '/^\[.*\]: http/d' changelog_section.md
+            sed -i '/^$/N;/^\n$/D' changelog_section.md
+            cat > release_notes.md <<EOF
+# Release ${TAG}
+
+Authentication ${TAG} has been released.
+
+## Changes
+
+$(cat changelog_section.md)
+
+## Installation
+
+\`\`\`swift
+dependencies: [
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", .upToNextMajor(from: "${VERSION}"))
+]
+\`\`\`
+
+## Links
+- [CHANGELOG](https://github.com/no-problem-dev/swift-authentication/blob/main/CHANGELOG.md)
+- [Documentation](https://no-problem-dev.github.io/swift-authentication/documentation/authentication/)
+EOF
+            echo "found=true" >> $GITHUB_OUTPUT
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version_tag }}
+          name: v${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          generate_release_notes: ${{ steps.changelog.outputs.found != 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calculate next version
+        id: next_version
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          NEXT_PATCH=$((PATCH + 1))
+          NEXT_VERSION="$MAJOR.$MINOR.$NEXT_PATCH"
+          NEXT_VERSION_TAG="v$NEXT_VERSION"
+          NEXT_BRANCH="release/$NEXT_VERSION_TAG"
+          echo "next_version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          echo "next_version_tag=$NEXT_VERSION_TAG" >> $GITHUB_OUTPUT
+          echo "next_branch=$NEXT_BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Delete old release branch if exists
+        run: |
+          NEXT_BRANCH="${{ steps.next_version.outputs.next_branch }}"
+          if git ls-remote --heads origin "$NEXT_BRANCH" | grep -q "$NEXT_BRANCH"; then
+            git push origin --delete "$NEXT_BRANCH"
+          fi
+
+      - name: Create next release branch
+        run: |
+          NEXT_BRANCH="${{ steps.next_version.outputs.next_branch }}"
+          git checkout -b "$NEXT_BRANCH"
+
+      - name: Update CHANGELOG for next version
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          VERSION_TAG="${{ steps.version.outputs.version_tag }}"
+          if ! grep -q "## \[Unreleased\]" CHANGELOG.md; then
+            awk '/^## \[/ && !inserted { print "## [Unreleased]\n\nNone\n"; inserted = 1 } { print }' CHANGELOG.md > CHANGELOG.tmp
+            mv CHANGELOG.tmp CHANGELOG.md
+          fi
+          sed -i "s|\[Unreleased\]: .*|\[Unreleased\]: https://github.com/no-problem-dev/swift-authentication/compare/$VERSION_TAG...HEAD|" CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "<!-- Auto-generated on $(date -u +%Y-%m-%dT%H:%M:%SZ) by release workflow -->" >> CHANGELOG.md
+
+      - name: Commit and push next release branch
+        run: |
+          NEXT_BRANCH="${{ steps.next_version.outputs.next_branch }}"
+          NEXT_VERSION_TAG="${{ steps.next_version.outputs.next_version_tag }}"
+          if ! git diff --quiet CHANGELOG.md; then
+            git add CHANGELOG.md
+            git commit -m "chore: prepare for $NEXT_VERSION_TAG release"
+          fi
+          git push origin "$NEXT_BRANCH"
+
+      - name: Create draft PR for next release
+        run: |
+          NEXT_BRANCH="${{ steps.next_version.outputs.next_branch }}"
+          NEXT_VERSION_TAG="${{ steps.next_version.outputs.next_version_tag }}"
+          gh pr create --draft --title "Release $NEXT_VERSION_TAG" \
+            --body "Next release branch. Update CHANGELOG.md and merge when ready." \
+            --base main --head "$NEXT_BRANCH"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Summary
+        run: |
+          VERSION_TAG="${{ steps.version.outputs.version_tag }}"
+          NEXT_VERSION_TAG="${{ steps.next_version.outputs.next_version_tag }}"
+          echo "Release $VERSION_TAG created"
+          echo "Next release branch created: $NEXT_VERSION_TAG"
