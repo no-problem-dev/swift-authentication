@@ -112,3 +112,5 @@
 [1.1.2]: https://github.com/no-problem-dev/swift-authentication/compare/v1.0.3...v1.1.2
 
 <!-- Auto-generated on 2025-11-09T05:08:08Z by release workflow -->
+
+<!-- Auto-generated on 2025-11-10T22:26:25Z by release workflow -->
