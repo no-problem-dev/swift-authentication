@@ -29,7 +29,10 @@ let package = Package(
                 .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
                 .product(name: "GoogleSignIn", package: "GoogleSignIn-iOS")
             ],
-            path: "Sources/Authentication"
+            path: "Sources/Authentication",
+            resources: [
+                .process("Resources")
+            ]
         ),
         .testTarget(
             name: "AuthenticationTests",
