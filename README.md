@@ -157,19 +157,70 @@ struct MyApp: App {
     var body: some Scene {
         WindowGroup {
             AuthenticatedRootView(
-                authenticationHeader: {
-                    VStack {
+                // ローディング中（認証確認 & 初期化）
+                loading: {
+                    MySplashScreen()
+                },
+
+                // 未認証（サインイン画面）
+                unauthenticated: {
+                    VStack(spacing: 32) {
+                        // アプリのロゴとブランディング
                         Image(systemName: "lock.shield")
                             .font(.system(size: 60))
                         Text("マイアプリ")
                             .font(.title)
+
+                        // 認証ボタン
+                        VStack(spacing: 16) {
+                            GoogleSignInButton()
+                            AppleSignInButton()
+                        }
+                        .padding(.horizontal, 32)
                     }
                 },
-                authenticatedContent: {
+
+                // エラー発生時
+                error: { error in
+                    MyErrorScreen(error: error)
+                },
+
+                // 認証完了（メインコンテンツ）
+                authenticated: {
                     MainContentView()
                 }
             )
             .authenticationUseCase(authUseCase)
+        }
+    }
+}
+
+// スプラッシュ画面の例
+struct MySplashScreen: View {
+    var body: some View {
+        VStack {
+            ProgressView()
+            Text("読み込み中...")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// エラー画面の例
+struct MyErrorScreen: View {
+    let error: Error
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 60))
+                .foregroundStyle(.red)
+            Text("エラーが発生しました")
+                .font(.title)
+            Text(error.localizedDescription)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -220,7 +271,39 @@ struct SomeView: View {
 
 ## 使い方
 
+### サインインボタンのカスタマイズ
+
+`GoogleSignInButton` と `AppleSignInButton` は、エラーハンドリングをカスタマイズできます：
+
+```swift
+import Authentication
+
+struct SignInView: View {
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(spacing: 16) {
+            GoogleSignInButton { error in
+                errorMessage = error.localizedDescription
+            }
+
+            AppleSignInButton { error in
+                errorMessage = error.localizedDescription
+            }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .foregroundStyle(.red)
+                    .font(.caption)
+            }
+        }
+    }
+}
+```
+
 ### 認証状態の監視
+
+直接 `AuthenticationState` を監視することも可能です：
 
 ```swift
 import Authentication
@@ -235,13 +318,13 @@ struct CustomAuthView: View {
             case .checking:
                 ProgressView("確認中...")
             case .unauthenticated:
-                SignInView()
+                MySignInView()
             case .firebaseAuthenticatedOnly:
                 ProgressView("初期化中...")
             case .authenticated:
                 MainContentView()
             case .error(let error):
-                ErrorView(error: error)
+                MyErrorView(error: error)
             }
         }
         .task {
@@ -253,6 +336,8 @@ struct CustomAuthView: View {
     }
 }
 ```
+
+> **推奨**: 通常は `AuthenticatedRootView` を使用することで、状態管理を自動化できます。
 
 ### ユーザー情報の取得
 
