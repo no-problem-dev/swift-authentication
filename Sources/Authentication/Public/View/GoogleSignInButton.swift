@@ -37,7 +37,7 @@ public struct GoogleSignInButton: View {
                         .tint(.primary)
                         .frame(width: 20, height: 20)
                 } else {
-                    Image(.googleLogo)
+                    Image("google-logo", bundle: .module)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 20, height: 20)
@@ -92,7 +92,7 @@ public struct GoogleSignInButtonStyle: ButtonStyle {
                     .stroke(.primary.opacity(0.3), lineWidth: 1)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(.systemBackground))
+                            .fill(.background)
                     )
             )
             .scaleEffect(configuration.isPressed ? 0.96 : 1.0)

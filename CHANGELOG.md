@@ -9,6 +9,44 @@
 
 なし
 
+## [1.1.4] - 2025-11-11
+
+### ⚠️ 破壊的変更
+- 認証UIを完全にリニューアルし、カスタマイズ可能な設計に刷新
+- `AuthenticationView` を削除し、代わりに `GoogleSignInButton` と `AppleSignInButton` を提供
+- `AuthenticatedRootView` の API を変更し、ViewBuilder パターンを採用
+
+### 追加
+- `GoogleSignInButton`: Google サインイン用の独立したボタンコンポーネント
+  - ローディング状態の表示
+  - エラーハンドリングコールバック
+  - アクセシブルなデザイン
+  - SwiftUI プレビュー付き
+- `AppleSignInButton`: Apple サインイン用のボタンコンポーネント
+  - iOS 専用（macOS では非サポート表示）
+  - カスタマイズ可能なスタイル（.black, .white, .whiteOutline）
+  - ローディングオーバーレイ
+  - SwiftUI プレビュー付き
+- Google ロゴアセット（1x, 2x, 3x）を Asset Catalog として追加
+- すべてのコンポーネントに包括的な SwiftUI プレビューを追加
+
+### 変更
+- `AuthenticatedRootView` を 4 つの ViewBuilder パラメータに変更：
+  - `loading`: ローディング中・初期化中の表示（認証確認と初期化の両方で使用）
+  - `unauthenticated`: 未認証時の表示（サインイン画面）
+  - `error`: エラー発生時の表示
+  - `authenticated`: 認証完了後の表示（メインコンテンツ）
+- 各ボタンのデザインを統一されたアウトラインスタイルに変更し、視覚的な一貫性を向上
+- Package.swift にリソース処理を追加（Asset Catalog サポート）
+
+### 削除
+- `AuthenticationView`: 完全にカスタマイズ可能な設計に置き換え
+
+### 設計思想
+- パッケージは認証ロジックと基本的なボタン UI のみを提供
+- スプラッシュ画面、サインイン画面のレイアウト、利用規約、プライバシーポリシーの配置などは、アプリ側で完全にカスタマイズ可能
+- ViewBuilder パターンにより、各認証状態に対して任意の UI を差し込み可能
+
 ## [1.1.3] - 2025-11-09
 
 ### 修正
@@ -68,7 +106,8 @@
 - 認証状態の管理
 - iOS 17.0+ および macOS 14.0+ サポート
 
-[未リリース]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.3...HEAD
+[未リリース]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.4...HEAD
+[1.1.4]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/no-problem-dev/swift-authentication/compare/v1.0.3...v1.1.2
 
