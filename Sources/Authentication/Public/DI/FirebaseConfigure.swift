@@ -78,20 +78,17 @@ public struct FirebaseConfigure {
             print("🔧 Firebase Analytics DebugView enabled")
         }
 
-        // Authentication エミュレーター環境変数設定
-        if case .emulator(let host, let port) = environment {
-            let authEmulatorHost = "\(host):\(port)"
-
-            // 環境変数設定（Firebase SDK が自動認識）
-            setenv("FIREBASE_AUTH_EMULATOR_HOST", authEmulatorHost, 1)
-
-            print("🔥 Firebase Authentication Emulator Mode")
-            print("  🔐 Auth Emulator: \(authEmulatorHost)")
-            print("  📝 Note: Firestore, Storage は使用しません（REST API経由）")
-        }
-
         // Firebase初期化
         FirebaseApp.configure()
+
+        // Authentication エミュレーター設定
+        // 重要: FirebaseApp.configure()の後に設定する必要がある
+        if case .emulator(let host, let port) = environment {
+            Auth.auth().useEmulator(withHost: host, port: port)
+            print("🔥 Firebase Authentication Emulator Mode")
+            print("  🔐 Auth Emulator: \(host):\(port)")
+            print("  📝 Note: Firestore, Storage は使用しません（REST API経由）")
+        }
 
         // 初回起動時の自動サインアウト（アプリ削除後の再インストール対策）
         // FirebaseApp.configure()の後に実行
