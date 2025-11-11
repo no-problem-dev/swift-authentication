@@ -63,9 +63,6 @@ public struct FirebaseConfigure {
         environment: Environment = .production,
         enableDebugMode: Bool = false
     ) {
-        // 初回起動時の自動サインアウト（アプリ削除後の再インストール対策）
-        signOutOnFirstLaunchIfNeeded()
-
         // RELEASEビルドでエミュレーター使用を禁止
         #if !DEBUG
         if case .emulator = environment {
@@ -96,6 +93,10 @@ public struct FirebaseConfigure {
         // Firebase初期化
         FirebaseApp.configure()
 
+        // 初回起動時の自動サインアウト（アプリ削除後の再インストール対策）
+        // FirebaseApp.configure()の後に実行
+        signOutOnFirstLaunchIfNeeded()
+
         // 環境確認ログ
         switch environment {
         case .production:
@@ -119,7 +120,14 @@ public struct FirebaseConfigure {
     /// ## 注意事項
     /// - この処理は透過的に実行され、ユーザーは意識する必要がありません
     /// - UserDefaultsキーは他のアプリと競合しないようにプレフィックス付き
+    /// - FirebaseApp が未初期化の場合は処理をスキップします
     private static func signOutOnFirstLaunchIfNeeded() {
+        // FirebaseApp が初期化されているか確認
+        guard FirebaseApp.app() != nil else {
+            print("⚠️ FirebaseApp not configured - skipping first launch sign-out")
+            return
+        }
+
         let userDefaults = UserDefaults.standard
         let key = "com.noproblem.authentication.hasLaunchedBefore"
 
