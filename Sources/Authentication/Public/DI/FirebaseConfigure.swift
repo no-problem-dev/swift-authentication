@@ -62,6 +62,9 @@ public struct FirebaseConfigure {
         environment: Environment = .production,
         enableDebugMode: Bool = false
     ) {
+        // 初回起動時の自動サインアウト（アプリ削除後の再インストール対策）
+        signOutOnFirstLaunchIfNeeded()
+
         // RELEASEビルドでエミュレーター使用を禁止
         #if !DEBUG
         if case .emulator = environment {
@@ -98,6 +101,37 @@ public struct FirebaseConfigure {
             print("🚀 Firebase Authentication: Production Mode")
         case .emulator:
             print("🧪 Firebase Authentication: Emulator Mode Active")
+        }
+    }
+
+    /// 初回起動時の自動サインアウト処理
+    ///
+    /// ## 目的
+    /// Firebase Authenticationはキーチェーンにログイン状態を永続化するため、
+    /// アプリ削除後の再インストール時にも自動的にログイン状態が復元されます。
+    /// これにより、クリーンな状態でのテストが困難になる問題があります。
+    ///
+    /// ## 動作
+    /// UserDefaultsで初回起動フラグを管理し、初回起動時のみサインアウトを実行します。
+    /// アプリ削除時にUserDefaultsはクリアされるため、再インストール時に再度サインアウトされます。
+    ///
+    /// ## 注意事項
+    /// - この処理は透過的に実行され、ユーザーは意識する必要がありません
+    /// - UserDefaultsキーは他のアプリと競合しないようにプレフィックス付き
+    private static func signOutOnFirstLaunchIfNeeded() {
+        let userDefaults = UserDefaults.standard
+        let key = "com.noproblem.authentication.hasLaunchedBefore"
+
+        if !userDefaults.bool(forKey: key) {
+            do {
+                try Auth.auth().signOut()
+                print("🆕 First launch detected - signed out from Firebase Auth")
+            } catch {
+                print("⚠️ Failed to sign out on first launch: \(error.localizedDescription)")
+            }
+
+            // フラグを設定（次回起動以降はスキップ）
+            userDefaults.set(true, forKey: key)
         }
     }
 }
