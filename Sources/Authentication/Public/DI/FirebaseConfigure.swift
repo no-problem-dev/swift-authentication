@@ -1,5 +1,6 @@
 import Foundation
 @preconcurrency import FirebaseCore
+@preconcurrency import FirebaseAuth
 
 /// Firebase Authentication 初期化ユーティリティ
 ///
