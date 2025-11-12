@@ -9,6 +9,32 @@
 
 なし
 
+## [1.1.5] - 2025-11-12
+
+### 追加
+- Firebase Authentication エミュレーターサポート
+  - `Environment` enum を追加（`.production` / `.emulator(host:port:)`）
+  - `FIREBASE_AUTH_EMULATOR_HOST` 環境変数の自動設定
+  - RELEASEビルドでのエミュレーター使用を禁止（セキュリティ対策）
+  - デフォルトエミュレーター設定: localhost:9099
+- 初回起動時の自動サインアウト処理
+  - アプリ削除後の再インストール時に Firebase Auth のキーチェーン永続化による自動ログイン状態を解除
+  - UserDefaults で初回起動フラグを管理
+  - 完全に透過的な処理（ユーザーは意識不要）
+
+### 修正
+- エミュレーター接続実装を改善
+  - 環境変数設定（setenv）から `Auth.auth().useEmulator()` の明示的呼び出しに変更
+  - iOS SDK で正しく動作する実装パターンに修正
+- `FirebaseApp` 初期化順序を修正
+  - `signOutOnFirstLaunchIfNeeded()` を `FirebaseApp.configure()` の後に移動
+  - `FirebaseApp` 未初期化の場合の防御チェックを追加
+
+### 設計方針
+- Authentication のみを対象（Firestore、Storage は含まない）
+- データアクセスは REST API 経由
+- DEBUG/RELEASE で自動的に環境切り替え可能
+
 ## [1.1.4] - 2025-11-11
 
 ### ⚠️ 破壊的変更
@@ -106,9 +132,12 @@
 - 認証状態の管理
 - iOS 17.0+ および macOS 14.0+ サポート
 
-[未リリース]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.4...HEAD
+[未リリース]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.5...HEAD
+[1.1.5]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.4...v1.1.5
 [1.1.4]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/no-problem-dev/swift-authentication/compare/v1.0.3...v1.1.2
 
 <!-- Auto-generated on 2025-11-09T05:08:08Z by release workflow -->
+
+<!-- Auto-generated on 2025-11-10T22:26:25Z by release workflow -->
