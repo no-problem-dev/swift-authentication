@@ -9,6 +9,13 @@
 
 なし
 
+## [1.1.6] - 2025-11-13
+
+### 変更
+- Package.swift の依存関係バージョン指定を `.upToNextMajor(from:)` に明示的に変更
+  - `from:` と機能的には同じだが、セマンティックバージョニングに基づくバージョン更新の意図を明確化
+  - 変更対象: swift-api-client (1.0.0)、firebase-ios-sdk (12.5.0)、GoogleSignIn-iOS (9.0.0)、swift-docc-plugin (1.4.0)
+
 ## [1.1.5] - 2025-11-12
 
 ### 追加
@@ -132,7 +139,8 @@
 - 認証状態の管理
 - iOS 17.0+ および macOS 14.0+ サポート
 
-[未リリース]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.5...HEAD
+[未リリース]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.6...HEAD
+[1.1.6]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.5...v1.1.6
 [1.1.5]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.4...v1.1.5
 [1.1.4]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.2...v1.1.3
