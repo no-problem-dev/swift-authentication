@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - Auth Results
-
 enum SignInResult {
     case success
     case failure(AuthError)
@@ -16,8 +14,6 @@ enum DeleteAccountResult {
     case success
     case failure(AuthError)
 }
-
-// MARK: - Auth Error
 
 enum AuthError: Error {
     case notAuthenticated

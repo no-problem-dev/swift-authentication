@@ -4,60 +4,12 @@ import AuthenticationServices
 import CryptoKit
 import GoogleSignIn
 
-/// 認証ユースケースの公開実装
-///
-/// GoogleアカウントまたはApple IDでのサインインを提供します。
-/// Firebase認証とバックエンドAPI認証を自動的に処理します。
-///
-/// ## セットアップ手順
-///
-/// 1. アプリ起動時にFirebaseを初期化:
-/// ```swift
-/// @main
-/// struct MyApp: App {
-///     init() {
-///         FirebaseConfigure.configure()
-///     }
-/// }
-/// ```
-///
-/// 2. APIClientとAuthenticationUseCaseを作成:
-/// ```swift
-/// let apiClient = APIClientImpl(
-///     baseURL: URL(string: "https://api.example.com")!,
-///     authTokenProvider: FirebaseAuthTokenProvider()
-/// )
-///
-/// let authUseCase = AuthenticationUseCaseImpl(
-///     apiClient: apiClient,
-///     authenticationPath: "/api/v1/auth/initialize"
-/// )
-/// ```
-///
-/// 3. 環境値として注入し、AuthenticatedRootViewで使用:
-/// ```swift
-/// AuthenticatedRootView(
-///     authenticationHeader: {
-///         VStack {
-///             Image(systemName: "app.fill")
-///             Text("マイアプリ")
-///         }
-///     },
-///     authenticatedContent: {
-///         MainTabView()
-///     }
-/// )
-/// .authenticationUseCase(authUseCase)
-/// ```
+/// 認証ユースケース実装
 public struct AuthenticationUseCaseImpl: AuthenticationUseCase {
     private let authService: AuthService
     private let apiAuthRepository: APIAuthRepository
 
-    /// APIClientを使用した初期化
-    /// - Parameters:
-    ///   - apiClient: API通信用クライアント
-    ///   - authenticationPath: バックエンドAPI認証エンドポイント（例: "/api/v1/auth/initialize"）
-    public init(apiClient: any APIClient, authenticationPath: String) {
+    public init(apiClient: some APIExecutable, authenticationPath: String) {
         let firebaseAuthRepository = FirebaseAuthRepositoryImpl()
         let apiAuthRepository = APIAuthRepositoryImpl(apiClient: apiClient, authenticationPath: authenticationPath)
 

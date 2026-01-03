@@ -1,27 +1,16 @@
 import Foundation
 
-/// 認証サービスプロトコル（内部使用）
+/// 認証サービスプロトコル
 protocol AuthService: Sendable {
-    /// 現在の認証状態を確認
     func isAuthenticated() async -> Bool
-
-    /// Googleでサインイン
     func signInWithGoogle() async -> SignInResult
-
-    /// Appleでサインイン
     func signInWithApple(idToken: String, nonce: String) async -> SignInResult
-
-    /// サインアウト
     func signOut() async -> SignOutResult
-
-    /// アカウント削除
     func deleteAccount() async -> DeleteAccountResult
-
-    /// 認証状態の監視
     func observeAuthState() -> AsyncStream<Bool>
 }
 
-/// 認証サービスの実装（内部使用）
+/// 認証サービス実装
 final class AuthServiceImpl: AuthService {
     private let authRepository: AuthRepository
 
