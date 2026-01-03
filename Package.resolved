@@ -1,5 +1,5 @@
 {
-  "originHash" : "0b5ae7425bded1e6fa333c27d3616e6c344e2fb0c90c5d15b6709089da484e72",
+  "originHash" : "c614a4f5bc5f031599c0fa489be9b28a880e06a25ad47b48c0a472a3403baf60",
   "pins" : [
     {
       "identity" : "abseil-cpp-binary",
@@ -150,8 +150,17 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/no-problem-dev/swift-api-client.git",
       "state" : {
-        "revision" : "3ac72a2fcca223e66883904235260a6880fd960c",
-        "version" : "1.0.1"
+        "revision" : "d7f3d6b07e23c24b32e1bceac40b8d571d119327",
+        "version" : "1.0.11"
+      }
+    },
+    {
+      "identity" : "swift-api-contract",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/no-problem-dev/swift-api-contract",
+      "state" : {
+        "revision" : "09a29ba2e5af93688022dbe42e8aef16dbb4328f",
+        "version" : "1.0.5"
       }
     },
     {
@@ -179,6 +188,15 @@
       "state" : {
         "revision" : "c169a5744230951031770e27e475ff6eefe51f9d",
         "version" : "1.33.3"
+      }
+    },
+    {
+      "identity" : "swift-syntax",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-syntax.git",
+      "state" : {
+        "revision" : "4799286537280063c85a32f09884cfbca301b1a1",
+        "version" : "602.0.0"
       }
     }
   ],

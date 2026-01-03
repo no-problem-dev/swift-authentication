@@ -1,12 +1,12 @@
 import Foundation
-@preconcurrency import FirebaseAuth
-@preconcurrency import FirebaseCore
+import FirebaseAuth
+import FirebaseCore
 import GoogleSignIn
 #if canImport(UIKit)
 import UIKit
 #endif
 
-/// FirebaseAuthの実装（内部使用）
+/// FirebaseAuth実装
 final class FirebaseAuthRepositoryImpl: AuthRepository {
     private let auth: Auth
 
@@ -21,29 +21,28 @@ final class FirebaseAuthRepositoryImpl: AuthRepository {
     func signInWithGoogle() async -> SignInResult {
         #if os(iOS)
         do {
-            // UIWindowSceneからrootViewControllerを取得
-            guard let windowScene = await UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                  let presentingViewController = await windowScene.windows.first?.rootViewController else {
-                return .failure(.googleSignInFailed(
-                    NSError(domain: "AuthError", code: -1, userInfo: [
-                        NSLocalizedDescriptionKey: "画面の取得に失敗しました"
-                    ])
-                ))
-            }
+            let (presentingViewController, clientID) = try await Task { @MainActor in
+                guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                      let viewController = windowScene.windows.first?.rootViewController else {
+                    throw AuthError.googleSignInFailed(
+                        NSError(domain: "AuthError", code: -1, userInfo: [
+                            NSLocalizedDescriptionKey: "画面の取得に失敗しました"
+                        ])
+                    )
+                }
 
-            // Firebase ClientIDを取得
-            guard let clientID = FirebaseApp.app()?.options.clientID else {
-                return .failure(.googleSignInFailed(
-                    NSError(domain: "AuthError", code: -1, userInfo: [
-                        NSLocalizedDescriptionKey: "Google Sign-In設定が見つかりません"
-                    ])
-                ))
-            }
+                guard let clientID = FirebaseApp.app()?.options.clientID else {
+                    throw AuthError.googleSignInFailed(
+                        NSError(domain: "AuthError", code: -1, userInfo: [
+                            NSLocalizedDescriptionKey: "Google Sign-In設定が見つかりません"
+                        ])
+                    )
+                }
 
-            // Google Sign-In設定
-            GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+                GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+                return (viewController, clientID)
+            }.value
 
-            // Google Sign-In実行
             let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presentingViewController)
 
             guard let idToken = result.user.idToken?.tokenString else {
@@ -57,10 +56,11 @@ final class FirebaseAuthRepositoryImpl: AuthRepository {
             let accessToken = result.user.accessToken.tokenString
             let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
 
-            // Firebaseでサインイン
             _ = try await auth.signIn(with: credential)
 
             return .success
+        } catch let error as AuthError {
+            return .failure(error)
         } catch {
             return .failure(.googleSignInFailed(error))
         }
