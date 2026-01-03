@@ -9,6 +9,14 @@
 
 なし
 
+## [1.1.8] - 2026-01-03
+
+### 追加
+- 包括的な認証テストスイートを追加（52テスト）
+  - AuthenticationManager のユニットテスト
+  - FirebaseAuthTokenProvider のテスト
+  - モック・スタブを活用したテストカバレッジの向上
+
 ## [1.1.7] - 2026-01-03
 
 ### 変更
@@ -152,7 +160,8 @@
 - 認証状態の管理
 - iOS 17.0+ および macOS 14.0+ サポート
 
-[未リリース]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.7...HEAD
+[未リリース]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.8...HEAD
+[1.1.8]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.7...v1.1.8
 [1.1.7]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.6...v1.1.7
 [1.1.6]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.5...v1.1.6
 [1.1.5]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.4...v1.1.5
