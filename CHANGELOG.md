@@ -9,6 +9,14 @@
 
 なし
 
+## [1.1.9] - 2026-01-18
+
+### 修正
+- `observeAuthState()` での重複 `initializeUser()` 呼び出しを防止
+  - Firebase Auth の `addStateDidChangeListener` が認証状態変更時に複数回イベントを発火する問題に対処
+  - `hasInitialized` フラグを追加し、認証セッション中は初回のみ API を呼び出すように変更
+  - サインアウト時にフラグをリセット
+
 ## [1.1.8] - 2026-01-03
 
 ### 追加
@@ -160,7 +168,8 @@
 - 認証状態の管理
 - iOS 17.0+ および macOS 14.0+ サポート
 
-[未リリース]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.8...HEAD
+[未リリース]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.9...HEAD
+[1.1.9]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.8...v1.1.9
 [1.1.8]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.7...v1.1.8
 [1.1.7]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.6...v1.1.7
 [1.1.6]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.5...v1.1.6
@@ -178,3 +187,5 @@
 <!-- Auto-generated on 2025-11-13T00:46:32Z by release workflow -->
 
 <!-- Auto-generated on 2026-01-03T00:20:28Z by release workflow -->
+
+<!-- Auto-generated on 2026-01-03T01:27:28Z by release workflow -->
