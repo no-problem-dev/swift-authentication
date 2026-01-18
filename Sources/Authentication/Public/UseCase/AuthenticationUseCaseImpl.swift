@@ -87,17 +87,31 @@ public struct AuthenticationUseCaseImpl: AuthenticationUseCase {
     }
 
     public func observeAuthState() -> AsyncStream<AuthenticationState> {
+        let apiAuthRepository = self.apiAuthRepository
+
         return AsyncStream { continuation in
             let task = Task {
+                var hasInitialized = false
+
                 for await isAuthenticated in authService.observeAuthState() {
                     if isAuthenticated {
-                        do {
-                            _ = try await apiAuthRepository.initializeUser()
+                        // 初回のみ initializeUser() を呼ぶ
+                        // Firebase Auth は状態変更のたびに複数回イベントをemitするため
+                        if !hasInitialized {
+                            do {
+                                _ = try await apiAuthRepository.initializeUser()
+                                hasInitialized = true
+                                continuation.yield(.authenticated)
+                            } catch {
+                                continuation.yield(.error(error))
+                            }
+                        } else {
+                            // 2回目以降は initializeUser() をスキップ
                             continuation.yield(.authenticated)
-                        } catch {
-                            continuation.yield(.error(error))
                         }
                     } else {
+                        // サインアウト時はフラグをリセット
+                        hasInitialized = false
                         continuation.yield(.unauthenticated)
                     }
                 }
