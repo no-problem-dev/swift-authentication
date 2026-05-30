@@ -1,400 +1,163 @@
 # swift-authentication
 
-Firebase Authentication、Google Sign-In、Apple Sign-In をサポートした Swift 製認証パッケージ
+vendor 非依存なコア抽象に、Firebase / Apple / Google / REST の具象を**ターゲット単位で差し込む**認証パッケージ。
 
-![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)
-![Platforms](https://img.shields.io/badge/Platforms-iOS%2017.0+%20%7C%20macOS%2014.0+-blue.svg)
-![SPM](https://img.shields.io/badge/Swift_Package_Manager-compatible-brightgreen.svg)
-![Firebase](https://img.shields.io/badge/Firebase-integrated-orange.svg)
+![Swift](https://img.shields.io/badge/Swift-6.2-orange.svg)
+![Platforms](https://img.shields.io/badge/Platforms-iOS%2017+%20%7C%20macOS%2014+-blue.svg)
+![SPM](https://img.shields.io/badge/SwiftPM-compatible-brightgreen.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-📚 **[完全なドキュメント](https://no-problem-dev.github.io/swift-authentication/documentation/authentication/)**
+## 設計
 
-## 概要
+認証を 3 つの責務に分離し、それぞれを vendor 非依存なプロトコルとして規定します。具象は
+別ターゲットで実装し、合成ルート（アプリ起動時）で差し込みます。
 
-`swift-authentication` は、Swift アプリケーションで Firebase Authentication、Google Sign-In、Apple Sign-In を簡単に統合するためのパッケージです。認証状態の管理のみに集中し、ユーザー情報の管理は行いません。
+| 責務 | プロトコル（コア） | 具象（別ターゲット） |
+|---|---|---|
+| 資格情報の取得 | `CredentialProvider` | `AppleCredentialProvider` / `GoogleCredentialProvider` |
+| セッション交換 | `Authenticator` | `FirebaseAuthenticator` |
+| ログイン後処理（冪等） | `PostAuthenticationAction` | `APIUserProvisioning`（REST） |
 
-### 主な機能
+これらを束ねる `@Observable` な **`AuthenticationStore`**（`@MainActor`）が `state` を公開し、
+画面はこれを観測します。
 
-- ✅ **Firebase Authentication 統合** - Firebase との完全な統合
-- ✅ **Google Sign-In サポート** - iOS / macOS 対応
-- ✅ **Apple Sign-In サポート** - iOS のみ
-- ✅ **モダンな async/await API** - Swift 6.0 の並行処理機能をフル活用
-- ✅ **SwiftUI Environment Values 対応** - SwiftUI と完全に統合
-- ✅ **認証状態の管理に特化** - ユーザー情報は管理しないシンプルな設計
-- ✅ **クロスプラットフォーム** - iOS 17.0+ および macOS 14.0+ 対応
+### ターゲット構成
 
-## 必要要件
+| ターゲット | 役割 | 外部依存 |
+|---|---|---|
+| **`Authentication`** | コア抽象（プロトコル・値型・`AuthenticationStore`） | **なし** |
+| **`AuthenticationUI`** | SwiftUI ビュー + Environment DI | SwiftUI（システム） |
+| **`AuthenticationApple`** | Apple 資格情報取得 | AuthenticationServices / CryptoKit（システム） |
+| **`AuthenticationGoogle`** | Google 資格情報取得 | GoogleSignIn |
+| **`AuthenticationFirebase`** | Firebase でのセッション交換・設定 | FirebaseAuth |
+| **`AuthenticationAPI`** | REST でのログイン後処理 | swift-api-client |
 
-- iOS 17.0+
-- macOS 14.0+
-- Swift 6.0+
-
-## 依存関係
-
-- [swift-api-client](https://github.com/no-problem-dev/swift-api-client) - HTTP API クライアント
-- [Firebase iOS SDK](https://github.com/firebase/firebase-ios-sdk) - Firebase Authentication
-- [Google Sign-In](https://github.com/google/GoogleSignIn-iOS) - Google サインイン
-
-## 前提条件
-
-### 1. Firebase プロジェクトのセットアップ
-
-1. [Firebase Console](https://console.firebase.google.com) で新しいプロジェクトを作成
-2. Firebase Authentication を有効化
-3. 使用するプロバイダーを有効化：
-   - Google Sign-In プロバイダー
-   - Apple Sign-In プロバイダー (iOS のみ)
-
-### 2. GoogleService-Info.plist の取得
-
-1. Firebase Console からプロジェクトの設定を開く
-2. iOS アプリを追加（まだの場合）
-3. `GoogleService-Info.plist` をダウンロード
-4. Xcode プロジェクトのルートに追加
-5. アプリのターゲットに含まれていることを確認
-
-### 3. URL スキームの設定（Google Sign-In 用）
-
-`Info.plist` に Google Sign-In 用の URL スキームを追加：
-
-```xml
-<key>CFBundleURLTypes</key>
-<array>
-    <dict>
-        <key>CFBundleURLSchemes</key>
-        <array>
-            <!-- GoogleService-Info.plist の REVERSED_CLIENT_ID をコピー -->
-            <string>com.googleusercontent.apps.YOUR-CLIENT-ID</string>
-        </array>
-    </dict>
-</array>
-```
-
-> **重要**: `REVERSED_CLIENT_ID` の値は `GoogleService-Info.plist` から取得してください。
-
-### 4. Apple Sign-In の設定（iOS のみ）
-
-Apple Sign-In を使用する場合：
-
-1. Apple Developer で App ID に "Sign In with Apple" Capability を追加
-2. Xcode の Signing & Capabilities で "Sign in with Apple" を追加
-
-> **注意**: macOS では Apple Sign-In は利用できません。macOS では Google Sign-In のみ使用できます。
-
-### 5. バックエンド API のセットアップ
-
-**必須 API エンドポイント**: **POST `/auth/initialize`** (パスは任意)
-
-このエンドポイントは、Firebase 認証後にユーザーをバックエンドに登録・初期化するために使用されます。
-
-#### 必須レスポンス形式（JSON、camelCase）
-
-```json
-{
-  "initialized": true,
-  "message": "User initialized successfully"
-}
-```
-
-#### 認証フロー
-
-1. ユーザーが Google または Apple でサインイン（Firebase Authentication）
-2. Firebase から ID トークンを取得
-3. バックエンド API に `/auth/initialize` をリクエスト（Authorization ヘッダーに Bearer トークン）
-4. バックエンドがユーザーを登録/初期化
-5. アプリで認証完了
-
-> **注意**: このパッケージは自動的に Authorization ヘッダーに Firebase ID トークンを付与します。バックエンド側でトークンの検証が必要です。
+**コア（`Authentication`）とUI（`AuthenticationUI`）はベンダー SDK に依存しません。**
+画面はこの 2 つだけに依存できるため、SwiftUI プレビューで Firebase / GoogleSignIn を
+読み込みません。具象（Firebase 等）は合成ルートでのみ import します。
 
 ## インストール
 
-### Swift Package Manager
-
-`Package.swift` に以下を追加してください：
-
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "1.1.0")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "2.0.0")
 ]
 ```
 
-または Xcode で：
-1. File > Add Package Dependencies
-2. パッケージ URL を入力: `https://github.com/no-problem-dev/swift-authentication.git`
-3. バージョンを選択: `1.1.0` 以降
+利用側ターゲットでは必要な product だけを依存に追加します。
 
-## クイックスタート
+- 画面モジュール → `AuthenticationUI`（+ `Authentication`）
+- 合成ルート（App 本体）→ `AuthenticationFirebase` / `AuthenticationApple` / `AuthenticationGoogle` / `AuthenticationAPI`
 
-### 1. Firebase の初期化と AuthenticationUseCase の設定
+## 使い方
+
+### 1. 合成ルートで `AuthenticationStore` を組み立てる
 
 ```swift
 import SwiftUI
 import Authentication
+import AuthenticationUI
+import AuthenticationFirebase
+import AuthenticationApple
+import AuthenticationGoogle
+import AuthenticationAPI
 import APIClient
+import FirebaseCore
 
 @main
 struct MyApp: App {
-    private let authUseCase: AuthenticationUseCase
+    @State private var store: AuthenticationStore
 
     init() {
-        // Firebase を初期化
-        FirebaseConfigure.configure()
+        FirebaseConfigurator.configure()   // 本番。エミュレータは .configure(environment: .emulator())
 
-        // APIClient を作成
-        let apiClient = APIClientImpl(
+        let tokenProvider = FirebaseTokenProvider()
+        let apiClient = APIClient(
             baseURL: URL(string: "https://api.example.com")!,
-            authTokenProvider: FirebaseAuthTokenProvider()
+            authTokenProvider: APITokenProviderAdapter(tokenProvider)
         )
 
-        // AuthenticationUseCase を作成
-        self.authUseCase = AuthenticationUseCaseImpl(
-            apiClient: apiClient,
-            authenticationPath: "/api/v1/auth/initialize"
-        )
+        let clientID = FirebaseApp.app()?.options.clientID ?? ""
+
+        _store = State(initialValue: AuthenticationStore(
+            authenticator: FirebaseAuthenticator(),
+            postAuthentication: APIUserProvisioning(apiClient: apiClient, path: "/auth/initialize"),
+            credentialProviders: [
+                AppleCredentialProvider(),
+                GoogleCredentialProvider(clientID: clientID)
+            ]
+        ))
     }
 
     var body: some Scene {
         WindowGroup {
             AuthenticatedRootView(
-                // ローディング中（認証確認 & 初期化）
-                loading: {
-                    MySplashScreen()
-                },
-
-                // 未認証（サインイン画面）
+                loading: { ProgressView() },
                 unauthenticated: {
-                    VStack(spacing: 32) {
-                        // アプリのロゴとブランディング
-                        Image(systemName: "lock.shield")
-                            .font(.system(size: 60))
-                        Text("マイアプリ")
-                            .font(.title)
-
-                        // 認証ボタン
-                        VStack(spacing: 16) {
-                            GoogleSignInButton()
-                            AppleSignInButton()
-                        }
-                        .padding(.horizontal, 32)
+                    VStack(spacing: 16) {
+                        GoogleSignInButton()
+                        AppleSignInButton()
                     }
+                    .padding(.horizontal, 32)
                 },
-
-                // エラー発生時
-                error: { error in
-                    MyErrorScreen(error: error)
-                },
-
-                // 認証完了（メインコンテンツ）
-                authenticated: {
-                    MainContentView()
-                }
+                error: { error in Text(error.localizedDescription) },
+                authenticated: { user in MainView(userID: user.id) }
             )
-            .authenticationUseCase(authUseCase)
-        }
-    }
-}
-
-// スプラッシュ画面の例
-struct MySplashScreen: View {
-    var body: some View {
-        VStack {
-            ProgressView()
-            Text("読み込み中...")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-}
-
-// エラー画面の例
-struct MyErrorScreen: View {
-    let error: Error
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 60))
-                .foregroundStyle(.red)
-            Text("エラーが発生しました")
-                .font(.title)
-            Text(error.localizedDescription)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            .authenticationStore(store)
         }
     }
 }
 ```
 
-### 2. サインアウト
+### 2. 画面（プレビュー可能・ベンダー非依存）
 
 ```swift
 import SwiftUI
 import Authentication
+import AuthenticationUI
 
-struct MainContentView: View {
-    @Environment(\.authenticationUseCase) private var authUseCase
+struct MainView: View {
+    @Environment(\.authenticationStore) private var store
+    let userID: String
 
     var body: some View {
         VStack {
-            Text("認証済みコンテンツ")
-                .font(.title)
-
-            Button("サインアウト") {
-                Task {
-                    try? await authUseCase?.signOut()
-                }
-            }
+            Text("ようこそ \(userID)")
+            Button("サインアウト") { Task { try? await store?.signOut() } }
         }
     }
 }
-```
 
-### 3. 認証状態の確認
-
-```swift
-import SwiftUI
-import Authentication
-
-struct SomeView: View {
-    @Environment(\.authenticationUseCase) private var authUseCase
-    @State private var isAuthenticated = false
-
-    var body: some View {
-        Text(isAuthenticated ? "認証済み" : "未認証")
-            .task {
-                isAuthenticated = await authUseCase?.isAuthenticated() ?? false
-            }
-    }
+#Preview {
+    // Firebase 不要。スタブで生成。
+    MainView(userID: "preview")
+        .authenticationStore(.previewUnauthenticated)
 }
 ```
 
-## 使い方
+### 状態
 
-### サインインボタンのカスタマイズ
+`AuthenticationState`:
 
-`GoogleSignInButton` と `AppleSignInButton` は、エラーハンドリングをカスタマイズできます：
+- `.checking` — 確認中
+- `.unauthenticated` — 未認証
+- `.authenticatedPendingProvisioning` — 交換済み・ログイン後処理待ち
+- `.authenticated(AuthUser)` — 完全に認証済み
+- `.error(any Error)` — エラー
 
-```swift
-import Authentication
+## バックエンド API（任意）
 
-struct SignInView: View {
-    @State private var errorMessage: String?
+`APIUserProvisioning` を使う場合、`POST <path>`（既定 `/auth/initialize`）を用意します。
+Firebase ID トークンが `Authorization: Bearer` で自動付与されます。プロビジョニングは
+認証セッション中に **1 回だけ** 呼ばれますが、サーバ側でも冪等にしてください。
+プロビジョニング不要なら `postAuthentication` を省略（`NoPostAuthentication`）できます。
 
-    var body: some View {
-        VStack(spacing: 16) {
-            GoogleSignInButton { error in
-                errorMessage = error.localizedDescription
-            }
+## 独自プロバイダ
 
-            AppleSignInButton { error in
-                errorMessage = error.localizedDescription
-            }
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(.red)
-                    .font(.caption)
-            }
-        }
-    }
-}
-```
-
-### 認証状態の監視
-
-直接 `AuthenticationState` を監視することも可能です：
-
-```swift
-import Authentication
-
-struct CustomAuthView: View {
-    @Environment(\.authenticationUseCase) private var authUseCase
-    @State private var authState: AuthenticationState = .checking
-
-    var body: some View {
-        Group {
-            switch authState {
-            case .checking:
-                ProgressView("確認中...")
-            case .unauthenticated:
-                MySignInView()
-            case .firebaseAuthenticatedOnly:
-                ProgressView("初期化中...")
-            case .authenticated:
-                MainContentView()
-            case .error(let error):
-                MyErrorView(error: error)
-            }
-        }
-        .task {
-            guard let authUseCase = authUseCase else { return }
-            for await state in authUseCase.observeAuthState() {
-                authState = state
-            }
-        }
-    }
-}
-```
-
-> **推奨**: 通常は `AuthenticatedRootView` を使用することで、状態管理を自動化できます。
-
-### ユーザー情報の取得
-
-認証パッケージはユーザー情報を管理しません。必要な場合は FirebaseAuth から直接取得してください：
-
-```swift
-import FirebaseAuth
-
-// ユーザー ID の取得
-if let userId = Auth.auth().currentUser?.uid {
-    print("User ID: \(userId)")
-}
-
-// その他のユーザー情報
-if let currentUser = Auth.auth().currentUser {
-    let email = currentUser.email
-    let displayName = currentUser.displayName
-    let photoURL = currentUser.photoURL
-}
-```
-
-または、バックエンド API から別途ユーザープロファイル情報を取得してください。
-
-### API リクエストでの認証トークン使用
-
-```swift
-import APIClient
-import Authentication
-
-// FirebaseAuthTokenProvider を使って認証トークンを取得
-let tokenProvider = FirebaseAuthTokenProvider()
-
-// API クライアントに設定
-let apiClient = APIClientImpl(
-    baseURL: URL(string: "https://api.example.com")!,
-    authTokenProvider: tokenProvider
-)
-
-// リクエスト時に自動的に Authorization ヘッダーが追加されます
-let endpoint = APIEndpoint(path: "/user/profile", method: .get)
-let profile: UserProfile = try await apiClient.request(endpoint)
-```
-
-## 認証状態
-
-`AuthenticationState` は以下の状態を持ちます：
-
-- `.checking` - 認証状態を確認中
-- `.unauthenticated` - 未認証
-- `.firebaseAuthenticatedOnly` - Firebase 認証済み（バックエンド API 認証待ち）
-- `.authenticated` - 完全認証済み
-- `.error(Error)` - 認証エラー
+`AuthProviderID` は拡張可能で、`CredentialProvider` / `Authenticator` /
+`PostAuthenticationAction` を実装すれば任意のバックエンド（Firestore 直叩き、独自 OIDC 等）を
+差し込めます。
 
 ## ライセンス
 
-このプロジェクトは MIT ライセンスの下で公開されています。詳細は [LICENSE](LICENSE) ファイルをご覧ください。
-
-## サポート
-
-問題が発生した場合や機能リクエストがある場合は、[GitHub の Issue](https://github.com/no-problem-dev/swift-authentication/issues) を作成してください。
+MIT License. 詳細は [LICENSE](LICENSE) を参照してください。

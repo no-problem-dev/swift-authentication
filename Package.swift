@@ -9,10 +9,17 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .library(
-            name: "Authentication",
-            targets: ["Authentication"]
-        )
+        // コア抽象（vendor 非依存）。画面はこれだけに依存できる。
+        .library(name: "Authentication", targets: ["Authentication"]),
+        // SwiftUI（システムのみ）。
+        .library(name: "AuthenticationUI", targets: ["AuthenticationUI"]),
+        // 資格情報の取得（具象）。
+        .library(name: "AuthenticationApple", targets: ["AuthenticationApple"]),
+        .library(name: "AuthenticationGoogle", targets: ["AuthenticationGoogle"]),
+        // セッション交換（具象）。
+        .library(name: "AuthenticationFirebase", targets: ["AuthenticationFirebase"]),
+        // ログイン後処理（具象・REST）。
+        .library(name: "AuthenticationAPI", targets: ["AuthenticationAPI"])
     ],
     dependencies: [
         .package(url: "https://github.com/no-problem-dev/swift-api-client.git", .upToNextMajor(from: "1.0.0")),
@@ -21,22 +28,71 @@ let package = Package(
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", .upToNextMajor(from: "1.4.0"))
     ],
     targets: [
+        // MARK: - Core (no third-party dependencies)
         .target(
             name: "Authentication",
+            path: "Sources/Authentication"
+        ),
+
+        // MARK: - UI (SwiftUI + system frameworks only)
+        .target(
+            name: "AuthenticationUI",
+            dependencies: ["Authentication"],
+            path: "Sources/AuthenticationUI",
+            resources: [.process("Resources")]
+        ),
+
+        // MARK: - Credential providers
+        .target(
+            name: "AuthenticationApple",
+            dependencies: ["Authentication"],
+            path: "Sources/AuthenticationApple"
+        ),
+        .target(
+            name: "AuthenticationGoogle",
             dependencies: [
-                .product(name: "APIClient", package: "swift-api-client"),
-                .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
+                "Authentication",
                 .product(name: "GoogleSignIn", package: "GoogleSignIn-iOS")
             ],
-            path: "Sources/Authentication",
-            resources: [
-                .process("Resources")
-            ]
+            path: "Sources/AuthenticationGoogle"
         ),
+
+        // MARK: - Session exchange (Firebase)
+        .target(
+            name: "AuthenticationFirebase",
+            dependencies: [
+                "Authentication",
+                .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
+                .product(name: "FirebaseCore", package: "firebase-ios-sdk")
+            ],
+            path: "Sources/AuthenticationFirebase"
+        ),
+
+        // MARK: - Post-authentication (REST)
+        .target(
+            name: "AuthenticationAPI",
+            dependencies: [
+                "Authentication",
+                .product(name: "APIClient", package: "swift-api-client")
+            ],
+            path: "Sources/AuthenticationAPI"
+        ),
+
+        // MARK: - Tests
         .testTarget(
             name: "AuthenticationTests",
             dependencies: ["Authentication"],
             path: "Tests/AuthenticationTests"
+        ),
+        .testTarget(
+            name: "AuthenticationAppleTests",
+            dependencies: ["AuthenticationApple"],
+            path: "Tests/AuthenticationAppleTests"
+        ),
+        .testTarget(
+            name: "AuthenticationAPITests",
+            dependencies: ["AuthenticationAPI"],
+            path: "Tests/AuthenticationAPITests"
         )
     ]
 )

@@ -9,6 +9,33 @@
 
 なし
 
+## [2.0.0] - 2026-05-30
+
+### ⚠️ 破壊的変更（全面再設計・後方互換なし）
+
+単一ターゲットに Firebase / GoogleSignIn / REST / UI を同梱していた構成を、
+責務とベンダー依存でターゲット分割するクリーンアーキテクチャに刷新。
+
+- **ターゲット分割**: `Authentication`（コア・依存ゼロ）/ `AuthenticationUI` /
+  `AuthenticationApple` / `AuthenticationGoogle` / `AuthenticationFirebase` /
+  `AuthenticationAPI`。コアと UI はベンダー SDK 非依存になり、画面は Firebase 無しで
+  プレビュー可能。
+- **3 層責務分離**: 資格情報取得（`CredentialProvider`）/ セッション交換
+  （`Authenticator`）/ ログイン後処理（`PostAuthenticationAction`）。
+- **vendor 非依存の型システム**: `signInWithGoogle()` 等のプロバイダ別メソッドを廃止し、
+  汎用の `signIn(with: AuthCredential)` に統一。`AuthProviderID` は拡張可能。
+- **命名刷新**: `Impl` サフィックスを全廃。具象名が実装を表す
+  （`FirebaseAuthenticator` / `APIUserProvisioning` / `AppleCredentialProvider` 等）。
+  `AuthenticationUseCase(Impl)` → `@Observable` な `AuthenticationStore`。
+- **状態ホルダ**: `@MainActor @Observable final class AuthenticationStore` を Environment
+  （`@Entry authenticationStore`）に注入。
+- **ログイン後処理の冪等性**を `AuthenticationStore` に一元化（旧 v1.1.9 の重複呼び出し
+  対策を統合し、明示サインイン経路とリスナ経路の二重発火を排除）。
+- Apple Sign-In の nonce ハンドリングを修正（リクエストに SHA256、資格情報に生 nonce）。
+- `FirebaseConfigure` → `FirebaseConfigurator`（エミュレータ + RELEASE ガード +
+  初回起動サインアウトを踏襲）。
+- SDK ゼロで動くコアのユニットテストを追加（swift-testing）。
+
 ## [1.1.9] - 2026-01-18
 
 ### 修正
