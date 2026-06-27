@@ -33,7 +33,8 @@ jobs:
         run: |
           swift package --allow-writing-to-directory ./docs \
             generate-documentation \
-            --target Authentication \
+            --enable-experimental-combined-documentation \
+            --target Authentication --target AuthenticationUI --target AuthenticationApple --target AuthenticationGoogle --target AuthenticationFirebase --target AuthenticationAPI \
             --disable-indexing \
             --transform-for-static-hosting \
             --hosting-base-path swift-authentication \
