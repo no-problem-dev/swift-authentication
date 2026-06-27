@@ -18,8 +18,13 @@ public enum FirebaseConfigurator {
 
     /// Firebase を初期化します。
     ///
+    /// アプリ起動時に一度だけ呼んでください。
+    ///
     /// - Important: セキュリティのため、RELEASE ビルドでエミュレーター環境を指定すると
     ///   `fatalError` でクラッシュします。
+    /// - Note: 初回起動（アプリインストール直後）には、キーチェーンに残った古いセッションを
+    ///   クリアするため、自動的に `Auth.signOut()` が実行されます。再インストール後の
+    ///   意図しない自動ログインを防ぐための副作用です。
     public static func configure(
         environment: Environment = .production,
         enableDebugMode: Bool = false

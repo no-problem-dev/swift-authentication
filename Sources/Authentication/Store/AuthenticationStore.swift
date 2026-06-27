@@ -25,6 +25,12 @@ public final class AuthenticationStore {
     @ObservationIgnored private var provisionedUserID: String?
     @ObservationIgnored private var observationTask: Task<Void, Never>?
 
+    /// 認証セッションを組み立てます。
+    ///
+    /// - Parameters:
+    ///   - authenticator: セッション交換を担う実装（例: `FirebaseAuthenticator`）。
+    ///   - postAuthentication: ログイン後処理（省略時は `NoPostAuthentication`）。
+    ///   - credentialProviders: 利用するプロバイダ一覧。同じ `providerID` が複数ある場合は後勝ち。
     public init(
         authenticator: any Authenticator,
         postAuthentication: any PostAuthenticationAction = NoPostAuthentication(),
@@ -70,6 +76,9 @@ public final class AuthenticationStore {
         }
     }
 
+    /// サインアウトします。
+    ///
+    /// 失敗した場合は ``AuthError/signOutFailed(_:)`` を投げます。
     public func signOut() async throws {
         do {
             try await authenticator.signOut()
@@ -78,6 +87,11 @@ public final class AuthenticationStore {
         }
     }
 
+    /// 現在のアカウントを削除します。
+    ///
+    /// 失敗した場合は ``AuthError/deleteAccountFailed(_:)`` を投げます。
+    /// 未認証状態で呼ぶと、`Authenticator` 実装によっては ``AuthError/notAuthenticated`` が
+    /// `deleteAccountFailed` にラップされて throw されます。
     public func deleteAccount() async throws {
         do {
             try await authenticator.deleteAccount()

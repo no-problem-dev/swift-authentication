@@ -10,6 +10,11 @@ import Foundation
 ///   一度だけ ``perform(for:)`` を呼びますが、ネットワーク再試行やプロセス
 ///   再起動に備え、サーバ側でも冪等であることを前提とします。
 public protocol PostAuthenticationAction: Sendable {
+    /// ログイン後処理を実行します。
+    ///
+    /// - Parameter user: 認証済みユーザー。
+    /// - Throws: 処理が失敗した場合はエラーを投げます。``AuthenticationStore`` は
+    ///   このエラーを ``AuthError/postAuthenticationFailed(_:)`` でラップします。
     func perform(for user: AuthUser) async throws
 }
 

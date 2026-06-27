@@ -59,7 +59,10 @@ public struct GoogleSignInButton: View {
     }
 }
 
-/// Apple Sign-In ボタンと一貫したアウトラインスタイル。
+/// Google Sign-In ボタン用の ButtonStyle。
+///
+/// `AppleSignInButton` のスタイルと視覚的に一貫したアウトライン表示を提供します。
+/// カスタムの Google Sign-In ボタンを実装する場合にも利用できます。
 public struct GoogleSignInButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
