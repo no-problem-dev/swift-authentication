@@ -3,11 +3,11 @@ import Foundation
 /// 認証サーバへ渡す資格情報。
 ///
 /// プロバイダ固有の SDK 型（Firebase の `AuthCredential` など）に依存しない
-/// 中立な値型です。`CredentialProvider` が生成し、`Authenticator` が
-/// 認証サーバとのセッション交換に使用します。
+/// 中立な値型。`CredentialProvider` が生成し、`Authenticator` が
+/// 認証サーバとのセッション交換に使用する。
 ///
 /// 生成は各プロバイダ用ターゲットの便宜ファクトリ（例: `AuthCredential.apple(...)`）
-/// を使うことを想定しています。
+/// を使うことを想定。
 public struct AuthCredential: Sendable, Equatable {
     /// この資格情報が属するプロバイダ。
     public let provider: AuthProviderID

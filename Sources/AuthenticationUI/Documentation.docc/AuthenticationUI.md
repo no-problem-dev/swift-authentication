@@ -5,11 +5,11 @@
 ## Overview
 
 `AuthenticationUI` は `Authentication` モジュールの ``AuthenticationStore`` を
-SwiftUI の Environment 経由で受け取り、認証状態に応じた UI を宣言的に構築するためのコンポーネントを提供します。
-サードパーティ SDK への依存はなく、システムフレームワーク（SwiftUI・AuthenticationServices）のみを使用します。
+SwiftUI の Environment 経由で受け取り、認証状態に応じた UI を宣言的に構築するためのコンポーネントを提供する。
+サードパーティ SDK への依存はなく、システムフレームワーク（SwiftUI・AuthenticationServices）のみを使用する。
 
 アプリのルートビューに ``AuthenticatedRootView`` を配置し、`.authenticationStore(_:)` モディファイアで
-合成ルートから ``AuthenticationStore`` を注入するのが基本パターンです。
+合成ルートから ``AuthenticationStore`` を注入するのが基本パターン。
 
 ```swift
 import SwiftUI
@@ -46,8 +46,8 @@ struct MyApp: App {
 ```
 
 ``AppleSignInButton`` と ``GoogleSignInButton`` は Environment から ``AuthenticationStore`` を
-読み取り、タップ時に対応する `signIn(using:)` を自動で呼び出します。
-エラーハンドリングは `onError` クロージャで受け取れます（ユーザーキャンセルは自動的に無視されます）。
+読み取り、タップ時に対応する `signIn(using:)` を自動で呼び出す。
+エラーハンドリングは `onError` クロージャで受け取れる（ユーザーキャンセルは自動的に無視される）。
 
 ## Topics
 

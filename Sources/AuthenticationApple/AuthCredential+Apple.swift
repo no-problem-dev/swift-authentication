@@ -2,7 +2,7 @@ import Foundation
 import Authentication
 
 public extension AuthCredential {
-    /// Sign in with Apple の資格情報を生成します。
+    /// Sign in with Apple 用の ``AuthCredential`` を生成するファクトリ。
     /// - Parameters:
     ///   - idToken: Apple の identityToken（JWT 文字列）。
     ///   - rawNonce: リクエストに使った生 nonce（SHA256 前の値）。

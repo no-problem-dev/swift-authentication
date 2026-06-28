@@ -4,17 +4,18 @@ import Observation
 /// View が依存する認証セッションのステートホルダ。
 ///
 /// 取得（``CredentialProvider``）→ 交換（``Authenticator``）→ ログイン後処理
-/// （``PostAuthenticationAction``）を束ね、`@Observable` な ``state`` を公開します。
+/// （``PostAuthenticationAction``）を束ね、`@Observable` な ``state`` を公開する。
 ///
-/// - 依存は init で注入され、具象（`FirebaseAuthenticator` など）はここで刺さります。
+/// - 依存は init で注入され、具象（`FirebaseAuthenticator` など）はここで刺さる。
 ///   本型自体は vendor 非依存なので、SwiftUI プレビューやテストでは
-///   スタブ/モックを注入して SDK 無しで生成できます。
-/// - ``state`` と post-auth の冪等性は本型が単一の所有者です。認証状態の変化は
+///   スタブ/モックを注入して SDK 無しで生成できる。
+/// - ``state`` と post-auth の冪等性は本型が単一の所有者。認証状態の変化は
 ///   ``Authenticator/authStateChanges()`` を MainActor 上で逐次購読して反映し、
-///   プロビジョニングは認証セッション中に同一ユーザーへ一度だけ実行します。
+///   プロビジョニングは認証セッション中に同一ユーザーへ一度だけ実行する。
 @MainActor
 @Observable
 public final class AuthenticationStore {
+    /// View が観測する認証状態。
     public private(set) var state: AuthenticationState = .checking
 
     @ObservationIgnored private let authenticator: any Authenticator
@@ -25,7 +26,7 @@ public final class AuthenticationStore {
     @ObservationIgnored private var provisionedUserID: String?
     @ObservationIgnored private var observationTask: Task<Void, Never>?
 
-    /// 認証セッションを組み立てます。
+    /// 認証セッションを組み立てる。
     ///
     /// - Parameters:
     ///   - authenticator: セッション交換を担う実装（例: `FirebaseAuthenticator`）。
@@ -45,7 +46,7 @@ public final class AuthenticationStore {
         startObservingAuthState()
     }
 
-    /// 状態観測を停止します（任意。通常は不要だが明示的に破棄したい場合に使用）。
+    /// 状態観測を停止する（任意。通常は不要だが明示的に破棄したい場合に使用）。
     public func stopObserving() {
         observationTask?.cancel()
         observationTask = nil
@@ -53,7 +54,7 @@ public final class AuthenticationStore {
 
     // MARK: - Sign in
 
-    /// 登録済みの ``CredentialProvider`` で資格情報を取得し、サインインします。
+    /// 登録済みの ``CredentialProvider`` で資格情報を取得し、サインインする。
     public func signIn(using providerID: AuthProviderID) async throws {
         guard let provider = credentialProviders[providerID] else {
             throw AuthError.unsupportedProvider(providerID)
@@ -62,10 +63,10 @@ public final class AuthenticationStore {
         try await signIn(with: credential)
     }
 
-    /// 取得済みの資格情報でサインインします。
+    /// 取得済みの資格情報でサインインする。
     ///
     /// 成功すると ``Authenticator/authStateChanges()`` が新しいユーザーを流し、
-    /// 本型がプロビジョニングと ``state`` 更新を行います。
+    /// 本型がプロビジョニングと ``state`` 更新を行う。
     public func signIn(with credential: AuthCredential) async throws {
         do {
             _ = try await authenticator.signIn(with: credential)
@@ -76,9 +77,9 @@ public final class AuthenticationStore {
         }
     }
 
-    /// サインアウトします。
+    /// サインアウトする。
     ///
-    /// 失敗した場合は ``AuthError/signOutFailed(_:)`` を投げます。
+    /// 失敗した場合は ``AuthError/signOutFailed(_:)`` を投げる。
     public func signOut() async throws {
         do {
             try await authenticator.signOut()
@@ -87,11 +88,11 @@ public final class AuthenticationStore {
         }
     }
 
-    /// 現在のアカウントを削除します。
+    /// 現在のアカウントを削除する。
     ///
-    /// 失敗した場合は ``AuthError/deleteAccountFailed(_:)`` を投げます。
+    /// 失敗した場合は ``AuthError/deleteAccountFailed(_:)`` を投げる。
     /// 未認証状態で呼ぶと、`Authenticator` 実装によっては ``AuthError/notAuthenticated`` が
-    /// `deleteAccountFailed` にラップされて throw されます。
+    /// `deleteAccountFailed` にラップされて throw される。
     public func deleteAccount() async throws {
         do {
             try await authenticator.deleteAccount()

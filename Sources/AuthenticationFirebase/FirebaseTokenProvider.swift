@@ -5,7 +5,7 @@ import Authentication
 /// Firebase ID トークンを供給する ``AuthTokenProviding`` 実装。
 ///
 /// REST クライアントへ注入するには、`AuthenticationAPI` の `APITokenProviderAdapter`
-/// で包んでください。
+/// で包む。
 public final class FirebaseTokenProvider: AuthTokenProviding, @unchecked Sendable {
     private let auth: Auth
 

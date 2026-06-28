@@ -10,12 +10,16 @@ import AppKit
 
 /// Google Sign-In の資格情報取得（取得層の具象）。
 ///
-/// `clientID` は合成ルートから注入します（FirebaseCore に依存しないため、
+/// `clientID` は合成ルートから注入する（FirebaseCore に依存しないため、
 /// `FirebaseApp.app()?.options.clientID` をアプリ側から渡す想定）。
 public final class GoogleCredentialProvider: CredentialProvider, @unchecked Sendable {
     public let providerID = AuthProviderID.google
     private let clientID: String
 
+    /// Google 資格情報プロバイダを生成する。
+    ///
+    /// - Parameter clientID: Google OAuth クライアント ID。
+    ///   `FirebaseConfigurator.googleClientID` から取得するか、アプリの `Info.plist` から直接渡す。
     public init(clientID: String) {
         self.clientID = clientID
     }

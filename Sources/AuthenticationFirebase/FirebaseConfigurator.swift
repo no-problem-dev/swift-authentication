@@ -4,27 +4,29 @@ import Foundation
 
 /// Firebase Authentication の初期化ユーティリティ。
 ///
-/// このパッケージは **Firebase Authentication のみ** を対象とします
-/// （Firestore / Storage は含みません。データアクセスは REST API 経由）。
+/// このパッケージは **Firebase Authentication のみ** を対象とする
+/// （Firestore / Storage は含まない。データアクセスは REST API 経由）。
 public enum FirebaseConfigurator {
 
     /// Firebase Authentication 実行環境。
     public enum Environment: Sendable {
+        /// Firebase クラウドの本番環境。
         case production
+        /// ローカルで起動した Firebase Emulator Suite。デバッグ・テスト用。
         case emulator(host: String = "localhost", port: Int = 9099)
 
         public static var defaultEmulator: Environment { .emulator() }
     }
 
-    /// Firebase を初期化します。
+    /// Firebase を初期化する。
     ///
-    /// アプリ起動時に一度だけ呼んでください。
+    /// アプリ起動時に一度だけ呼ぶ。
     ///
     /// - Important: セキュリティのため、RELEASE ビルドでエミュレーター環境を指定すると
-    ///   `fatalError` でクラッシュします。
+    ///   `fatalError` でクラッシュする。
     /// - Note: 初回起動（アプリインストール直後）には、キーチェーンに残った古いセッションを
-    ///   クリアするため、自動的に `Auth.signOut()` が実行されます。再インストール後の
-    ///   意図しない自動ログインを防ぐための副作用です。
+    ///   クリアするため、自動的に `Auth.signOut()` が実行される。再インストール後の
+    ///   意図しない自動ログインを防ぐための副作用。
     public static func configure(
         environment: Environment = .production,
         enableDebugMode: Bool = false
@@ -52,7 +54,7 @@ public enum FirebaseConfigurator {
 
     /// `GoogleService-Info.plist` 由来の Google OAuth クライアント ID。
     ///
-    /// `GoogleCredentialProvider(clientID:)` に渡す用途。これを使うと、利用側は
+    /// `GoogleCredentialProvider(clientID:)` に渡す用途。利用側が
     /// FirebaseCore に直接依存せず clientID を取得できる。
     public static var googleClientID: String? {
         FirebaseApp.app()?.options.clientID

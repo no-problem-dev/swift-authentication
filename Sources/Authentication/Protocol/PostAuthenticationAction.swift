@@ -3,18 +3,18 @@ import Foundation
 /// ログイン後処理（post-auth 層）。
 ///
 /// 認証サーバへのログインが完了した後に実行する処理（ユーザーの初期化・
-/// プロビジョニングなど）を表すドメイン概念です。具象は別ターゲット
-/// （例: `AuthenticationAPI` の `APIUserProvisioning`）で差し込みます。
+/// プロビジョニングなど）を表すドメイン概念。具象は別ターゲット
+/// （例: `AuthenticationAPI` の `APIUserProvisioning`）で差し込む。
 ///
 /// - Important: ``AuthenticationStore`` は認証セッション中に同一ユーザーへ
-///   一度だけ ``perform(for:)`` を呼びますが、ネットワーク再試行やプロセス
-///   再起動に備え、サーバ側でも冪等であることを前提とします。
+///   一度だけ ``perform(for:)`` を呼ぶが、ネットワーク再試行やプロセス
+///   再起動に備え、サーバ側でも冪等であることを前提とする。
 public protocol PostAuthenticationAction: Sendable {
-    /// ログイン後処理を実行します。
+    /// ログイン後処理を実行する。
     ///
     /// - Parameter user: 認証済みユーザー。
-    /// - Throws: 処理が失敗した場合はエラーを投げます。``AuthenticationStore`` は
-    ///   このエラーを ``AuthError/postAuthenticationFailed(_:)`` でラップします。
+    /// - Throws: 処理が失敗した場合はエラーを投げる。``AuthenticationStore`` は
+    ///   このエラーを ``AuthError/postAuthenticationFailed(_:)`` でラップする。
     func perform(for user: AuthUser) async throws
 }
 

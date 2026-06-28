@@ -5,8 +5,8 @@ import Authentication
 /// Sign in with Apple ボタン。
 ///
 /// 公式の `ASAuthorizationAppleIDButton` を表示し、タップで
-/// `authenticationStore.signIn(using: .apple)` を実行します。資格情報の取得フローは
-/// 合成ルートで注入された `AppleCredentialProvider`（`AuthenticationApple`）が担います。
+/// `authenticationStore.signIn(using: .apple)` を実行する。資格情報の取得フローは
+/// 合成ルートで注入された `AppleCredentialProvider`（`AuthenticationApple`）が担う。
 public struct AppleSignInButton: View {
     @Environment(\.authenticationStore) private var store
     @State private var isLoading = false

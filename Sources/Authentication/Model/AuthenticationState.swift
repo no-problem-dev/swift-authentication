@@ -1,6 +1,6 @@
 import Foundation
 
-/// 認証状態。`AuthenticationStore` が保持し、View が観測して画面を切り替えます。
+/// 認証状態。`AuthenticationStore` が保持し、View が観測して画面を切り替える。
 public enum AuthenticationState {
     /// 初期状態。認証状態を確認中。
     case checking
@@ -13,6 +13,7 @@ public enum AuthenticationState {
     /// エラー。
     case error(any Error)
 
+    /// `.authenticated` ケースなら `true`。プロビジョニング完了後の状態にのみ `true` を返す。
     public var isAuthenticated: Bool {
         if case .authenticated = self { return true }
         return false

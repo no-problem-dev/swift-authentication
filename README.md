@@ -1,42 +1,42 @@
+English | [日本語](./README.ja.md)
+
 # swift-authentication
 
-vendor 非依存なコア抽象に、Firebase / Apple / Google / REST の具象を**ターゲット単位で差し込む**認証パッケージ。
+A modular authentication package that wires Firebase / Apple / Google / REST concretions into a vendor-agnostic core — one target at a time.
 
 ![Swift](https://img.shields.io/badge/Swift-6.2-orange.svg)
 ![Platforms](https://img.shields.io/badge/Platforms-iOS%2017+%20%7C%20macOS%2014+-blue.svg)
 ![SPM](https://img.shields.io/badge/SwiftPM-compatible-brightgreen.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-## 設計
+## Design
 
-認証を 3 つの責務に分離し、それぞれを vendor 非依存なプロトコルとして規定します。具象は
-別ターゲットで実装し、合成ルート（アプリ起動時）で差し込みます。
+Authentication is split into three responsibilities, each defined as a vendor-agnostic protocol. Concrete implementations live in separate targets and are composed at the app's composition root.
 
-| 責務 | プロトコル（コア） | 具象（別ターゲット） |
+| Responsibility | Protocol (core) | Concrete (separate target) |
 |---|---|---|
-| 資格情報の取得 | `CredentialProvider` | `AppleCredentialProvider` / `GoogleCredentialProvider` |
-| セッション交換 | `Authenticator` | `FirebaseAuthenticator` |
-| ログイン後処理（冪等） | `PostAuthenticationAction` | `APIUserProvisioning`（REST） |
+| Credential acquisition | `CredentialProvider` | `AppleCredentialProvider` / `GoogleCredentialProvider` |
+| Session exchange | `Authenticator` | `FirebaseAuthenticator` |
+| Post-auth action (idempotent) | `PostAuthenticationAction` | `APIUserProvisioning` (REST) |
 
-これらを束ねる `@Observable` な **`AuthenticationStore`**（`@MainActor`）が `state` を公開し、
-画面はこれを観測します。
+**`AuthenticationStore`** (`@Observable`, `@MainActor`) wires these together and exposes a `state` property that views observe.
 
-### ターゲット構成
+### Target Layout
 
-| ターゲット | 役割 | 外部依存 |
+| Target | Role | External dependencies |
 |---|---|---|
-| **`Authentication`** | コア抽象（プロトコル・値型・`AuthenticationStore`） | **なし** |
-| **`AuthenticationUI`** | SwiftUI ビュー + Environment DI | SwiftUI（システム） |
-| **`AuthenticationApple`** | Apple 資格情報取得 | AuthenticationServices / CryptoKit（システム） |
-| **`AuthenticationGoogle`** | Google 資格情報取得 | GoogleSignIn |
-| **`AuthenticationFirebase`** | Firebase でのセッション交換・設定 | FirebaseAuth |
-| **`AuthenticationAPI`** | REST でのログイン後処理 | swift-api-client |
+| **`Authentication`** | Core abstractions (protocols, value types, `AuthenticationStore`) | **None** |
+| **`AuthenticationUI`** | SwiftUI views + Environment DI | SwiftUI (system) |
+| **`AuthenticationApple`** | Apple credential acquisition | AuthenticationServices / CryptoKit (system) |
+| **`AuthenticationGoogle`** | Google credential acquisition | GoogleSignIn |
+| **`AuthenticationFirebase`** | Firebase session exchange and configuration | FirebaseAuth |
+| **`AuthenticationAPI`** | REST post-authentication action | swift-api-client |
 
-**コア（`Authentication`）とUI（`AuthenticationUI`）はベンダー SDK に依存しません。**
-画面はこの 2 つだけに依存できるため、SwiftUI プレビューで Firebase / GoogleSignIn を
-読み込みません。具象（Firebase 等）は合成ルートでのみ import します。
+**The core (`Authentication`) and UI (`AuthenticationUI`) targets have zero vendor SDK dependencies.**
+Views can depend on only these two, keeping SwiftUI Previews free of Firebase / GoogleSignIn.
+Concrete implementations (Firebase, etc.) are imported only at the composition root.
 
-## インストール
+## Installation
 
 ```swift
 dependencies: [
@@ -44,14 +44,14 @@ dependencies: [
 ]
 ```
 
-利用側ターゲットでは必要な product だけを依存に追加します。
+Add only the products your target needs:
 
-- 画面モジュール → `AuthenticationUI`（+ `Authentication`）
-- 合成ルート（App 本体）→ `AuthenticationFirebase` / `AuthenticationApple` / `AuthenticationGoogle` / `AuthenticationAPI`
+- Screen modules → `AuthenticationUI` (+ `Authentication`)
+- Composition root (App target) → `AuthenticationFirebase` / `AuthenticationApple` / `AuthenticationGoogle` / `AuthenticationAPI`
 
-## 使い方
+## Usage
 
-### 1. 合成ルートで `AuthenticationStore` を組み立てる
+### 1. Compose `AuthenticationStore` at the composition root
 
 ```swift
 import SwiftUI
@@ -69,7 +69,7 @@ struct MyApp: App {
     @State private var store: AuthenticationStore
 
     init() {
-        FirebaseConfigurator.configure()   // 本番。エミュレータは .configure(environment: .emulator())
+        FirebaseConfigurator.configure()   // Production. Use .configure(environment: .emulator()) for local dev.
 
         let tokenProvider = FirebaseTokenProvider()
         let apiClient = APIClient(
@@ -77,7 +77,7 @@ struct MyApp: App {
             authTokenProvider: APITokenProviderAdapter(tokenProvider)
         )
 
-        let clientID = FirebaseApp.app()?.options.clientID ?? ""
+        let clientID = FirebaseConfigurator.googleClientID ?? ""
 
         _store = State(initialValue: AuthenticationStore(
             authenticator: FirebaseAuthenticator(),
@@ -109,7 +109,7 @@ struct MyApp: App {
 }
 ```
 
-### 2. 画面（プレビュー可能・ベンダー非依存）
+### 2. Screen views (previewable, vendor-free)
 
 ```swift
 import SwiftUI
@@ -122,42 +122,41 @@ struct MainView: View {
 
     var body: some View {
         VStack {
-            Text("ようこそ \(userID)")
-            Button("サインアウト") { Task { try? await store?.signOut() } }
+            Text("Welcome, \(userID)")
+            Button("Sign Out") { Task { try? await store?.signOut() } }
         }
     }
 }
 
 #Preview {
-    // Firebase 不要。スタブで生成。
+    // No Firebase needed — uses a stub.
     MainView(userID: "preview")
         .authenticationStore(.previewUnauthenticated)
 }
 ```
 
-### 状態
+### State
 
-`AuthenticationState`:
+`AuthenticationState` transitions:
 
-- `.checking` — 確認中
-- `.unauthenticated` — 未認証
-- `.authenticatedPendingProvisioning` — 交換済み・ログイン後処理待ち
-- `.authenticated(AuthUser)` — 完全に認証済み
-- `.error(any Error)` — エラー
+- `.checking` — verifying stored session on launch
+- `.unauthenticated` — no active session
+- `.authenticatedPendingProvisioning` — session exchanged, post-auth action pending
+- `.authenticated(AuthUser)` — fully authenticated
+- `.error(any Error)` — an error occurred
 
-## バックエンド API（任意）
+## Backend API (optional)
 
-`APIUserProvisioning` を使う場合、`POST <path>`（既定 `/auth/initialize`）を用意します。
-Firebase ID トークンが `Authorization: Bearer` で自動付与されます。プロビジョニングは
-認証セッション中に **1 回だけ** 呼ばれますが、サーバ側でも冪等にしてください。
-プロビジョニング不要なら `postAuthentication` を省略（`NoPostAuthentication`）できます。
+When using `APIUserProvisioning`, provide a `POST <path>` endpoint (default `/auth/initialize`).
+The Firebase ID token is automatically attached as `Authorization: Bearer`.
+The store calls provisioning **once per authentication session**, but the server endpoint should also be idempotent.
+If provisioning is not required, omit `postAuthentication` (defaults to `NoPostAuthentication`).
 
-## 独自プロバイダ
+## Custom Providers
 
-`AuthProviderID` は拡張可能で、`CredentialProvider` / `Authenticator` /
-`PostAuthenticationAction` を実装すれば任意のバックエンド（Firestore 直叩き、独自 OIDC 等）を
-差し込めます。
+`AuthProviderID` is open-ended. Implement `CredentialProvider` / `Authenticator` /
+`PostAuthenticationAction` to plug in any backend — direct Firestore access, custom OIDC, etc.
 
-## ライセンス
+## License
 
-MIT License. 詳細は [LICENSE](LICENSE) を参照してください。
+MIT License. See [LICENSE](LICENSE) for details.

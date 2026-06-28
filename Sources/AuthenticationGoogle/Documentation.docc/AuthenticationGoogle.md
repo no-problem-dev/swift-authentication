@@ -5,9 +5,9 @@ Google Sign-In の資格情報取得と URL ハンドリングを担う ``Authen
 ## Overview
 
 `AuthenticationGoogle` は GoogleSignIn SDK を用いてサインインフローを起動し、
-ID トークンとアクセストークンを取得して vendor 非依存な ``Authentication/AuthCredential`` を生成します。
-`clientID` は合成ルートから注入します（FirebaseCore に直接依存せず取得するため、
-`AuthenticationFirebase` の `FirebaseConfigurator.googleClientID` を使うのが標準パターンです）。
+ID トークンとアクセストークンを取得して vendor 非依存な ``Authentication/AuthCredential`` を生成する。
+`clientID` は合成ルートから注入する（FirebaseCore に直接依存せず取得するため、
+`AuthenticationFirebase` の `FirebaseConfigurator.googleClientID` を使うのが標準パターン）。
 
 ```swift
 import Authentication
@@ -25,8 +25,8 @@ let store = AuthenticationStore(
 )
 ```
 
-Google Sign-In はリダイレクト URL を受け取る必要があります。
-アプリの `onOpenURL` で ``GoogleURLHandler/handle(_:)`` を呼んでください。
+Google Sign-In はリダイレクト URL を受け取る必要がある。
+アプリの `onOpenURL` で ``GoogleURLHandler/handle(_:)`` を呼ぶ。
 
 ```swift
 .onOpenURL { url in

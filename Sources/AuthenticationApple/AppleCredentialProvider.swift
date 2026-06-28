@@ -6,11 +6,14 @@ import Authentication
 ///
 /// `ASAuthorizationController` を起動し、正しい nonce ハンドリング
 /// （リクエストには SHA256 を設定し、生 nonce を資格情報へ載せる）で
-/// vendor 非依存な ``AuthCredential`` を生成します。
+/// vendor 非依存な ``AuthCredential`` を生成する。
 public final class AppleCredentialProvider: CredentialProvider, @unchecked Sendable {
     public let providerID = AuthProviderID.apple
     private let requestedScopes: [ASAuthorization.Scope]
 
+    /// Apple 資格情報プロバイダを生成する。
+    ///
+    /// - Parameter requestedScopes: Apple に要求するスコープ。省略時は `.fullName` と `.email`。
     public init(requestedScopes: [ASAuthorization.Scope] = [.fullName, .email]) {
         self.requestedScopes = requestedScopes
     }

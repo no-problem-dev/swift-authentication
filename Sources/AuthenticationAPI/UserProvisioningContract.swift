@@ -14,9 +14,9 @@ public struct UserProvisioningResponse: Decodable, Sendable {
 
 /// 既定のユーザープロビジョニング API 契約（`POST <path>`、既定は `/auth/initialize`）。
 ///
-/// swift-api-contract の自己エンコード契約（`Input == Self`）として実装しています。
-/// パスは `init(path:)` で差し替え可能です。別レスポンス型が必要なら、独自の
-/// `APIContract & APIInput`（`Input == Self`）を定義して ``APIUserProvisioning`` に渡してください。
+/// swift-api-contract の自己エンコード契約（`Input == Self`）として実装。
+/// パスは `init(path:)` で差し替え可能。別レスポンス型が必要なら、独自の
+/// `APIContract & APIInput`（`Input == Self`）を定義して ``APIUserProvisioning`` に渡す。
 public struct UserProvisioningContract: APIContract, APIInput {
     public typealias Input = Self
     public typealias Output = UserProvisioningResponse

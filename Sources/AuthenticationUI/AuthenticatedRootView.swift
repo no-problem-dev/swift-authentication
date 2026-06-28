@@ -4,8 +4,8 @@ import Authentication
 /// 認証状態に基づいてコンテンツを出し分けるルートビュー。
 ///
 /// Environment の ``AuthenticationStore`` の `state` を観測し、4 つの状態に対応する
-/// ビューを切り替えます。状態管理は `AuthenticationStore`（`@Observable`）が行うため、
-/// 本ビューは宣言的に分岐するだけです。
+/// ビューを切り替える。状態管理は `AuthenticationStore`（`@Observable`）が行うため、
+/// 本ビューは宣言的に分岐するだけ。
 public struct AuthenticatedRootView<
     LoadingView: View,
     UnauthenticatedView: View,

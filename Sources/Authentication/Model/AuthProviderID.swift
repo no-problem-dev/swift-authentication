@@ -2,9 +2,9 @@ import Foundation
 
 /// 認証プロバイダの識別子。
 ///
-/// 特定のベンダー（Firebase など）に依存しない汎用的な識別子です。
+/// 特定のベンダー（Firebase など）に依存しない汎用的な識別子。
 /// 閉じた `enum` ではなく `RawRepresentable` な構造体にすることで、
-/// パッケージを変更せずに独自プロバイダを追加できます。
+/// パッケージを変更せずに独自プロバイダを追加できる。
 ///
 /// ```swift
 /// let custom = AuthProviderID(rawValue: "oidc.acme")

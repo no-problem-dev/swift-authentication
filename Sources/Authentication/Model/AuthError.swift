@@ -2,9 +2,9 @@ import Foundation
 
 /// 認証フローで発生するエラー。
 ///
-/// 原因となった vendor 固有のエラーは関連値として保持しますが、型自体は
-/// vendor 非依存です。`any Error` を含むため `Equatable` ではなく、
-/// テストでの分類判定には `code` を使用します。
+/// 原因となった vendor 固有のエラーは関連値として保持するが、型自体は
+/// vendor 非依存。`any Error` を含むため `Equatable` ではなく、
+/// テストでの分類判定には `code` を使用する。
 public enum AuthError: Error {
     /// ユーザーによるキャンセル（資格情報取得の中断など）。
     case cancelled
@@ -40,6 +40,7 @@ extension AuthError {
         case configuration
     }
 
+    /// エラー種別を関連値なしで表す分類コード。`Equatable` なのでテストの assertion に使いやすい。
     public var code: Code {
         switch self {
         case .cancelled: .cancelled

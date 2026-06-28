@@ -3,8 +3,8 @@ import Authentication
 
 /// Google Sign-In ボタン。
 ///
-/// タップで `authenticationStore.signIn(using: .google)` を実行します。資格情報の取得は
-/// 合成ルートで注入された `GoogleCredentialProvider`（`AuthenticationGoogle`）が担います。
+/// タップで `authenticationStore.signIn(using: .google)` を実行する。資格情報の取得は
+/// 合成ルートで注入された `GoogleCredentialProvider`（`AuthenticationGoogle`）が担う。
 public struct GoogleSignInButton: View {
     @Environment(\.authenticationStore) private var store
     @State private var isLoading = false
@@ -61,8 +61,8 @@ public struct GoogleSignInButton: View {
 
 /// Google Sign-In ボタン用の ButtonStyle。
 ///
-/// `AppleSignInButton` のスタイルと視覚的に一貫したアウトライン表示を提供します。
-/// カスタムの Google Sign-In ボタンを実装する場合にも利用できます。
+/// `AppleSignInButton` のスタイルと視覚的に一貫したアウトライン表示を提供する。
+/// カスタムの Google Sign-In ボタンを実装する場合にも利用できる。
 public struct GoogleSignInButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
