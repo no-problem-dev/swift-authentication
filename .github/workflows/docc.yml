@@ -40,6 +40,28 @@ jobs:
             --hosting-base-path swift-authentication \
             --output-path ./docs
 
+      - name: Inject package overview into combined root
+        run: |
+          python3 - ./docs authentication <<'PY'
+          import json, os, sys
+          docs, core = sys.argv[1], sys.argv[2].lower()
+          root_p = os.path.join(docs, "data", "documentation.json")
+          core_p = os.path.join(docs, "data", "documentation", f"{core}.json")
+          if not (os.path.exists(root_p) and os.path.exists(core_p)):
+              print("skip: missing root/core json"); sys.exit(0)
+          root = json.load(open(root_p)); cm = json.load(open(core_p))
+          if root.get("abstract"):
+              print("skip: root already has abstract"); sys.exit(0)
+          if cm.get("abstract"): root["abstract"] = cm["abstract"]
+          ov = next((s for s in cm.get("primaryContentSections", []) if s.get("kind") == "content"), None)
+          if ov:
+              for k, v in cm.get("references", {}).items():
+                  root.setdefault("references", {}).setdefault(k, v)
+              root.setdefault("primaryContentSections", []).insert(0, ov)
+          json.dump(root, open(root_p, "w"), ensure_ascii=False)
+          print("injected overview from", core)
+          PY
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
