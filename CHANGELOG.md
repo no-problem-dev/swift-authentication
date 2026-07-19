@@ -9,6 +9,9 @@
 
 ### ⚠️ 破壊的変更
 
+- swift-api-client の依存を `from: "2.3.1"` に更新（ピン世代統一）。
+  `UserProvisioningContract` を APIInput 2.x に準拠させ、`decode` の decoder 引数を
+  `JSONDecoder` から `any APIBodyDecoder`（Codec seam）に変更。
 - `AuthTokenProviding.token()` を `async throws` に変更。`FirebaseTokenProvider` が
   トークン取得失敗を握りつぶして `nil` を返していた silent fallback を廃止し、
   Firebase のエラーをそのまま伝播する（`nil` は「未認証」の意味に限定）。

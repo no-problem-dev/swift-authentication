@@ -40,7 +40,7 @@ public struct UserProvisioningContract: APIContract, APIInput {
         pathParameters: [String: String],
         queryParameters: [String: String],
         body: Data?,
-        decoder: JSONDecoder
+        decoder: any APIBodyDecoder
     ) throws -> Self {
         Self(path: "")
     }

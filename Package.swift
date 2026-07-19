@@ -22,7 +22,7 @@ let package = Package(
         .library(name: "AuthenticationAPI", targets: ["AuthenticationAPI"])
     ],
     dependencies: [
-        .package(url: "https://github.com/no-problem-dev/swift-api-client.git", .upToNextMajor(from: "1.0.0")),
+        .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "2.3.1"),
         .package(url: "https://github.com/firebase/firebase-ios-sdk.git", .upToNextMajor(from: "12.5.0")),
         .package(url: "https://github.com/google/GoogleSignIn-iOS.git", .upToNextMajor(from: "9.0.0")),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", .upToNextMajor(from: "1.4.0"))
