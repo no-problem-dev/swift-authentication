@@ -18,17 +18,17 @@ private final class MockTokenProviding: AuthTokenProviding, @unchecked Sendable 
 
 @Suite("APITokenProviderAdapter")
 struct APITokenProviderAdapterTests {
-    @Test("getToken passes the underlying token through")
+    @Test("fetchToken passes the underlying token through")
     func passesTokenThrough() async throws {
         let adapter = APITokenProviderAdapter(MockTokenProviding(result: .success("id-token")))
-        let token = try await adapter.getToken()
+        let token = try await adapter.fetchToken()
         #expect(token == "id-token")
     }
 
-    @Test("getToken returns nil when unauthenticated")
+    @Test("fetchToken returns nil when unauthenticated")
     func passesNilThrough() async throws {
         let adapter = APITokenProviderAdapter(MockTokenProviding(result: .success(nil)))
-        let token = try await adapter.getToken()
+        let token = try await adapter.fetchToken()
         #expect(token == nil)
     }
 
@@ -36,7 +36,7 @@ struct APITokenProviderAdapterTests {
     func propagatesFailure() async {
         let adapter = APITokenProviderAdapter(MockTokenProviding(result: .failure(MockError.boom)))
         await #expect(throws: MockError.self) {
-            _ = try await adapter.getToken()
+            _ = try await adapter.fetchToken()
         }
     }
 }

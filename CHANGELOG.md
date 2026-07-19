@@ -7,6 +7,24 @@
 
 ## [未リリース]
 
+なし
+
+## [4.0.0] - 2026-07-19
+
+### ⚠️ 破壊的変更
+
+- swift-api-client の依存を `from: "3.0.0"` に更新。api-client 3.0.0 の
+  `AuthTokenProvider` は要件が `getToken()` → `fetchToken()` に改名されているため、
+  **`APITokenProviderAdapter.getToken()` を `fetchToken()` に改名**した。
+  この型を直接呼んでいる箇所は呼び出し名の変更が必要（プロトコル経由の注入は影響なし）。
+
+  api-client 3.0.0 は 2026-06-27 の監査で Swift API Design Guidelines 違反
+  （`get` prefix）として改名されたが、以後どの消費者も移行しておらず「誰も乗っていない
+  新 major」になっていた。本リリースで authentication / cached-remote-image / llm-cloud
+  の 3 消費者を同時に 3.x へ引き上げ、ファミリーの世代分裂を解消する。
+
+## [3.0.0] - 2026-07-19
+
 ### ⚠️ 破壊的変更
 
 - swift-api-client の依存を `from: "2.3.1"` に更新（ピン世代統一）。

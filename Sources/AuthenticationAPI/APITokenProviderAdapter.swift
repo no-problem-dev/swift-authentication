@@ -22,7 +22,7 @@ public struct APITokenProviderAdapter: AuthTokenProvider {
     /// - Returns: 有効なトークン文字列。未認証の場合は `nil`。
     /// - Throws: トークン取得に失敗した場合、下位の ``Authentication/AuthTokenProviding``
     ///   のエラーをそのまま伝播する。
-    public func getToken() async throws -> String? {
+    public func fetchToken() async throws -> String? {
         try await provider.token()
     }
 }
