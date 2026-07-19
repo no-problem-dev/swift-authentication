@@ -6,6 +6,6 @@ import Foundation
 /// `AuthenticationFirebase` の `FirebaseTokenProvider`、swift-api-client への
 /// 橋渡しは `AuthenticationAPI` の `APITokenProviderAdapter` が担当する。
 public protocol AuthTokenProviding: Sendable {
-    /// 現在の認証トークン。未認証なら `nil`。
-    func token() async -> String?
+    /// 現在の認証トークン。未認証なら `nil`。取得処理そのものの失敗は throw する。
+    func token() async throws -> String?
 }

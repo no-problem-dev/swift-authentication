@@ -7,7 +7,20 @@
 
 ## [未リリース]
 
-なし
+### ⚠️ 破壊的変更
+
+- `AuthTokenProviding.token()` を `async throws` に変更。`FirebaseTokenProvider` が
+  トークン取得失敗を握りつぶして `nil` を返していた silent fallback を廃止し、
+  Firebase のエラーをそのまま伝播する（`nil` は「未認証」の意味に限定）。
+  `APITokenProviderAdapter.getToken()` も同エラーを透過する。
+
+### 追加
+
+- `AuthenticationStore.deleteAccount()` のユニットテストを追加
+  （成功時の状態遷移・プロビジョニング予約の解除・連続呼び出しの安全性・
+  失敗時の `deleteAccountFailed` ラップ）。
+- `APITokenProviderAdapter` のユニットテストを追加（トークン透過・未認証 `nil`・
+  エラー伝播）。
 
 ## [2.0.0] - 2026-05-30
 

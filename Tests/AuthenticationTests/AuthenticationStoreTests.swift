@@ -203,6 +203,101 @@ struct AuthenticationStoreTests {
             Issue.record("unexpected error: \(error)")
         }
     }
+
+    // MARK: - Delete account
+
+    @Test("deleteAccount delegates to the authenticator and unauthenticates via the observer")
+    func deleteAccountSuccess() async throws {
+        let user = AuthUser(id: "del")
+        let authenticator = MockAuthenticator(stubbedUser: user)
+        let store = AuthenticationStore(authenticator: authenticator)
+
+        authenticator.emit(user)
+        await waitUntil { store.state.isAuthenticated }
+
+        try await store.deleteAccount()
+        await waitUntil { store.state == .unauthenticated }
+
+        #expect(authenticator.deleteCallCount == 1)
+        #expect(store.state == .unauthenticated)
+    }
+
+    @Test("deleteAccount resets idempotency so a subsequent sign-in provisions again")
+    func deleteAccountResetsProvisioning() async throws {
+        let user = AuthUser(id: "del-reset")
+        let authenticator = MockAuthenticator(stubbedUser: user)
+        let postAuth = MockPostAuthenticationAction()
+        let store = AuthenticationStore(authenticator: authenticator, postAuthentication: postAuth)
+
+        authenticator.emit(user)
+        await waitUntil { store.state.isAuthenticated }
+        #expect(postAuth.performCallCount == 1)
+
+        try await store.deleteAccount()
+        await waitUntil { store.state == .unauthenticated }
+
+        // 同一 ID での再登録を模擬。削除で予約が解除され、再度プロビジョニングされること。
+        authenticator.emit(user)
+        await waitUntil { postAuth.performCallCount == 2 }
+        #expect(postAuth.performCallCount == 2)
+        #expect(store.state == .authenticated(user))
+    }
+
+    @Test("repeated deleteAccount calls are safe and keep the state unauthenticated")
+    func deleteAccountIsIdempotent() async throws {
+        let user = AuthUser(id: "del-twice")
+        let authenticator = MockAuthenticator(stubbedUser: user)
+        let store = AuthenticationStore(authenticator: authenticator)
+
+        authenticator.emit(user)
+        await waitUntil { store.state.isAuthenticated }
+
+        try await store.deleteAccount()
+        try await store.deleteAccount()
+        await waitUntil { store.state == .unauthenticated }
+
+        #expect(authenticator.deleteCallCount == 2)
+        #expect(store.state == .unauthenticated)
+    }
+
+    @Test("deleteAccount failure throws .deleteAccountFailed and keeps the session")
+    func deleteAccountFailure() async throws {
+        let user = AuthUser(id: "del-fail")
+        let authenticator = MockAuthenticator(stubbedUser: user)
+        authenticator.deleteError = TestError("delete")
+        let store = AuthenticationStore(authenticator: authenticator)
+
+        authenticator.emit(user)
+        await waitUntil { store.state.isAuthenticated }
+
+        do {
+            try await store.deleteAccount()
+            Issue.record("expected throw")
+        } catch let error as AuthError {
+            #expect(error.code == .deleteAccountFailed)
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+        #expect(authenticator.deleteCallCount == 1)
+        #expect(store.state == .authenticated(user))   // 失敗時はサインイン状態のまま
+    }
+
+    @Test("deleteAccount wraps .notAuthenticated from the authenticator as .deleteAccountFailed")
+    func deleteAccountWhenNotAuthenticated() async {
+        let authenticator = MockAuthenticator()
+        authenticator.deleteError = AuthError.notAuthenticated
+        let store = AuthenticationStore(authenticator: authenticator)
+
+        do {
+            try await store.deleteAccount()
+            Issue.record("expected throw")
+        } catch let error as AuthError {
+            #expect(error.code == .deleteAccountFailed)
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+        #expect(authenticator.deleteCallCount == 1)
+    }
 }
 
 @Suite("PostAuthenticationAction helpers")
