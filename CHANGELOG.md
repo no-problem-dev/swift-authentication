@@ -9,6 +9,35 @@
 
 なし
 
+## [5.0.0] - 2026-07-20
+
+### 修正
+
+- **`UserProvisioningContract` が応答本文の形を決め打ちしており、バックエンドが別の形を
+  返すとサインイン自体が通らなくなっていた問題を解消。**
+  `Output` は `{ initialized, message }` を必須で要求する一方、`APIUserProvisioning.perform`
+  は結果を `_ =` で捨てていた。バックエンドが違う形を返すとデコードで落ち、呼び出し元では
+  認証失敗として扱われる。応答本文の形はアプリ側の都合で決まるもので、このパッケージが
+  知るべきことではない。`Output` を `EmptyOutput` にして本文を読まない形にした。
+
+  同じ欠陥は 1.x 系で 1.1.10（2026-07-20）として修正済みだったが、2.0.0 の再設計時に
+  `AuthInitializeContract` → `UserProvisioningContract` として作り直された際に復活していた。
+  既存テストが `executeWithResponse` を差し替えるモックで**実デコード経路を迂回**していた
+  ため、両系列とも検知できなかった。実デコーダに通す回帰テストを追加している。
+
+### ⚠️ 破壊的変更
+
+- `UserProvisioningResponse` を削除。応答本文を読まなくなったため用途が消えた。
+  ワークスペース内に利用者はいない。独自の応答型が必要な場合は、`APIContract & APIInput`
+  （`Input == Self`）を自前で定義して `APIExecutable` に直接渡す。
+
+### 変更
+
+- `UserProvisioningContract` の doc から「別レスポンス型が必要なら独自の契約を
+  `APIUserProvisioning` に渡す」という記述を削除。`APIUserProvisioning.init` は
+  `apiClient` と `path` しか受け取らず、**契約を渡す口は存在しなかった**（実装にない
+  逃げ道を doc が約束していた）。本文を読まなくなったのでこの逃げ道自体が不要になった。
+
 ## [4.0.0] - 2026-07-19
 
 ### ⚠️ 破壊的変更

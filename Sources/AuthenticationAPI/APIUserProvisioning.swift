@@ -23,9 +23,11 @@ public final class APIUserProvisioning<Client: APIExecutable>: PostAuthenticatio
 
     /// バックエンドのプロビジョニングエンドポイントを呼ぶ。
     ///
+    /// レスポンス本文は読まない。成否だけが意味を持つ（``UserProvisioningContract`` を参照）。
+    ///
     /// - Parameter user: プロビジョニング対象のユーザー。
     /// - Throws: API リクエストの失敗エラー。
     public func perform(for user: AuthUser) async throws {
-        _ = try await apiClient.execute(UserProvisioningContract(path: path))
+        try await apiClient.execute(UserProvisioningContract(path: path))
     }
 }
