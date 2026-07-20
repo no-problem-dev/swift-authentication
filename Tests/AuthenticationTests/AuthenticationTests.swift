@@ -224,33 +224,6 @@ final class DeleteAccountResultTests: XCTestCase {
     }
 }
 
-// MARK: - InitializeUserResult Tests
-
-final class InitializeUserResultTests: XCTestCase {
-
-    func testInitializationSuccess() {
-        let result = InitializeUserResult(initialized: true, message: "User initialized successfully")
-
-        XCTAssertTrue(result.initialized)
-        XCTAssertEqual(result.message, "User initialized successfully")
-    }
-
-    func testInitializationAlreadyExists() {
-        let result = InitializeUserResult(initialized: false, message: "User already exists")
-
-        XCTAssertFalse(result.initialized)
-        XCTAssertEqual(result.message, "User already exists")
-    }
-
-    func testSendableConformance() {
-        let result = InitializeUserResult(initialized: true, message: "Test")
-
-        Task {
-            _ = result
-        }
-    }
-}
-
 // MARK: - AuthInitializeContract Tests
 
 final class AuthInitializeContractTests: XCTestCase {
@@ -300,38 +273,23 @@ final class AuthInitializeContractTests: XCTestCase {
     }
 }
 
-// MARK: - AuthInitializeResponse Tests
+// MARK: - AuthInitialize Output Tests
 
-final class AuthInitializeResponseTests: XCTestCase {
+final class AuthInitializeOutputTests: XCTestCase {
 
-    func testDecodingSuccess() throws {
-        let json = """
-        {
-            "initialized": true,
-            "message": "User created"
-        }
-        """.data(using: .utf8)!
-
+    /// 初期化レスポンスの形はアプリごとに違う。どんな body が来ても読み飛ばせること
+    func testOutputIgnoresArbitraryBody() throws {
         let decoder = JSONDecoder()
-        let response = try decoder.decode(AuthInitializeResponse.self, from: json)
 
-        XCTAssertTrue(response.initialized)
-        XCTAssertEqual(response.message, "User created")
-    }
-
-    func testDecodingExistingUser() throws {
-        let json = """
-        {
-            "initialized": false,
-            "message": "User already exists"
+        for json in [
+            #"{"initialized": true, "message": "User created"}"#,
+            #"{"profile": {"id": "u1"}, "migration": {"source": "firestore"}, "created": false}"#,
+            #"{}"#,
+        ] {
+            XCTAssertNoThrow(
+                try decoder.decode(AuthInitializeContract.Output.self, from: Data(json.utf8))
+            )
         }
-        """.data(using: .utf8)!
-
-        let decoder = JSONDecoder()
-        let response = try decoder.decode(AuthInitializeResponse.self, from: json)
-
-        XCTAssertFalse(response.initialized)
-        XCTAssertEqual(response.message, "User already exists")
     }
 }
 
@@ -583,8 +541,9 @@ final class MockAPIExecutable: APIExecutable, @unchecked Sendable {
     nonisolated(unsafe) var executeError: Error?
     nonisolated(unsafe) var executedRequests: [Any] = []
 
-    func execute<C: APIContract>(_ contract: C) async throws -> C.Output
-        where C.Input == C, C: APIInput
+    /// プロトコルの基本実装はこれ 1 本。execute() 2 種は extension から降ってくる
+    func executeWithResponse<E: APIContract>(_ contract: E) async throws -> APIResponse<E.Output>
+        where E.Input == E, E: APIInput
     {
         executedRequests.append(contract)
 
@@ -592,23 +551,18 @@ final class MockAPIExecutable: APIExecutable, @unchecked Sendable {
             throw error
         }
 
-        guard let result = executeResult as? C.Output else {
+        let output: E.Output
+        if let result = executeResult as? E.Output {
+            output = result
+        } else if let empty = EmptyOutput() as? E.Output {
+            output = empty
+        } else {
             throw NSError(domain: "MockError", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "Result type mismatch"
             ])
         }
 
-        return result
-    }
-
-    func execute<E: APIContract>(_ contract: E) async throws
-        where E.Input == E, E.Output == EmptyOutput, E: APIInput
-    {
-        executedRequests.append(contract)
-
-        if let error = executeError {
-            throw error
-        }
+        return APIResponse(output: output, statusCode: 200, headers: [:])
     }
 }
 
@@ -618,25 +572,21 @@ final class APIAuthRepositoryImplTests: XCTestCase {
 
     func testInitializeUserSuccess() async throws {
         let mockClient = MockAPIExecutable()
-        mockClient.executeResult = AuthInitializeResponse(initialized: true, message: "Created")
 
         let repository = APIAuthRepositoryImpl(apiClient: mockClient, authenticationPath: "/v1/auth")
-        let result = try await repository.initializeUser()
+        try await repository.initializeUser()
 
-        XCTAssertTrue(result.initialized)
-        XCTAssertEqual(result.message, "Created")
         XCTAssertEqual(mockClient.executedRequests.count, 1)
     }
 
-    func testInitializeUserAlreadyExists() async throws {
+    /// バックエンドが何を返しても、成否だけ見るのでデコードで落ちない
+    func testInitializeUserIgnoresResponseBody() async throws {
         let mockClient = MockAPIExecutable()
-        mockClient.executeResult = AuthInitializeResponse(initialized: false, message: "Already exists")
 
-        let repository = APIAuthRepositoryImpl(apiClient: mockClient, authenticationPath: "/v1/auth")
-        let result = try await repository.initializeUser()
+        let repository = APIAuthRepositoryImpl(apiClient: mockClient, authenticationPath: "/v2/auth/initialize")
+        try await repository.initializeUser()
 
-        XCTAssertFalse(result.initialized)
-        XCTAssertEqual(result.message, "Already exists")
+        XCTAssertEqual(mockClient.executedRequests.count, 1)
     }
 
     func testInitializeUserAPIError() async {
@@ -648,7 +598,7 @@ final class APIAuthRepositoryImplTests: XCTestCase {
         let repository = APIAuthRepositoryImpl(apiClient: mockClient, authenticationPath: "/v1/auth")
 
         do {
-            _ = try await repository.initializeUser()
+            try await repository.initializeUser()
             XCTFail("Expected error to be thrown")
         } catch {
             XCTAssertEqual((error as NSError).domain, "API")
@@ -658,10 +608,9 @@ final class APIAuthRepositoryImplTests: XCTestCase {
 
     func testInitializeUserUsesCorrectPath() async throws {
         let mockClient = MockAPIExecutable()
-        mockClient.executeResult = AuthInitializeResponse(initialized: true, message: "OK")
 
         let repository = APIAuthRepositoryImpl(apiClient: mockClient, authenticationPath: "/v2/custom/auth/path")
-        _ = try await repository.initializeUser()
+        try await repository.initializeUser()
 
         guard let contract = mockClient.executedRequests.first as? AuthInitializeContract else {
             XCTFail("Expected AuthInitializeContract")

@@ -32,7 +32,7 @@ public struct AuthenticationUseCaseImpl: AuthenticationUseCase {
         }
 
         do {
-            _ = try await apiAuthRepository.initializeUser()
+            try await apiAuthRepository.initializeUser()
         } catch {
             throw AuthError.apiAuthFailed(error)
         }
@@ -64,7 +64,7 @@ public struct AuthenticationUseCaseImpl: AuthenticationUseCase {
         }
 
         do {
-            _ = try await apiAuthRepository.initializeUser()
+            try await apiAuthRepository.initializeUser()
         } catch {
             throw AuthError.apiAuthFailed(error)
         }
@@ -99,7 +99,7 @@ public struct AuthenticationUseCaseImpl: AuthenticationUseCase {
                         // Firebase Auth は状態変更のたびに複数回イベントをemitするため
                         if !hasInitialized {
                             do {
-                                _ = try await apiAuthRepository.initializeUser()
+                                try await apiAuthRepository.initializeUser()
                                 hasInitialized = true
                                 continuation.yield(.authenticated)
                             } catch {

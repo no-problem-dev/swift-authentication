@@ -11,20 +11,17 @@ final class APIAuthRepositoryImpl<Client: APIExecutable>: APIAuthRepository {
         self.authenticationPath = authenticationPath
     }
 
-    func initializeUser() async throws -> InitializeUserResult {
-        let response: AuthInitializeResponse = try await apiClient.execute(
-            AuthInitializeContract(path: authenticationPath)
-        )
-        return InitializeUserResult(
-            initialized: response.initialized,
-            message: response.message
-        )
+    func initializeUser() async throws {
+        try await apiClient.execute(AuthInitializeContract(path: authenticationPath))
     }
 }
 
+/// レスポンスの形はアプリ側の都合で決まるので、ここでは読まない。
+/// 固定の DTO を要求すると、バックエンドが返す形を変えた瞬間に
+/// デコード失敗＝サインイン不能になる。
 struct AuthInitializeContract: APIContract, APIInput {
     typealias Input = Self
-    typealias Output = AuthInitializeResponse
+    typealias Output = EmptyOutput
 
     static let method: APIMethod = .post
     static let subPath: String = ""
@@ -48,9 +45,4 @@ struct AuthInitializeContract: APIContract, APIInput {
     ) throws -> Self {
         fatalError("Client-only contract")
     }
-}
-
-struct AuthInitializeResponse: Decodable, Sendable {
-    let initialized: Bool
-    let message: String
 }

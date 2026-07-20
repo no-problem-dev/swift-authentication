@@ -9,6 +9,20 @@
 
 なし
 
+## [1.1.10] - 2026-07-20
+
+### 修正
+- `initializeUser()` が初期化レスポンスの形を決め打ちしていた問題を解消
+  - `{ initialized, message }` を必須で要求していたため、バックエンドが別の形を返すと
+    デコード失敗 → `AuthError.apiAuthFailed` となり **サインイン自体が通らなくなっていた**
+  - レスポンスの中身はアプリ側の都合で決まるもので、このパッケージは成否しか使っていない
+    （呼び出し側は全て `_ =` で捨てていた）。`Output` を `EmptyOutput` にして body を読まない形へ
+  - `InitializeUserResult` / `AuthInitializeResponse` は用途が消えたので削除
+
+### 変更
+- `MockAPIExecutable`（テスト）を `executeWithResponse` 基本実装へ寄せ、
+  swift-api-contract 1.2.0 でのプロトコル準拠エラーを解消
+
 ## [1.1.9] - 2026-01-18
 
 ### 修正
