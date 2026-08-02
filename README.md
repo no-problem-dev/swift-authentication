@@ -40,7 +40,7 @@ Concrete implementations (Firebase, etc.) are imported only at the composition r
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "2.0.0")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "5.0.1")
 ]
 ```
 
