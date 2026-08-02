@@ -65,7 +65,10 @@ let package = Package(
                 .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
                 .product(name: "FirebaseCore", package: "firebase-ios-sdk")
             ],
-            path: "Sources/AuthenticationFirebase"
+            path: "Sources/AuthenticationFirebase",
+            // プライバシーマニフェスト。UserDefaults を触るのはこのターゲットだけなので、
+            // ここにだけ置く。`.copy` で中身を変えずにリソースバンドルへ入れる。
+            resources: [.copy("PrivacyInfo.xcprivacy")]
         ),
 
         // MARK: - Post-authentication (REST)

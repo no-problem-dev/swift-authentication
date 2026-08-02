@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  プライバシーマニフェスト（Firebase 交換層）。
+
+  申告するのは 1 件だけ:
+
+    UserDefaults — `FirebaseConfigurator` が debug_mode の印と、
+    「再インストール後の初回起動か」の印を読み書きする。読むのは自分のアプリの
+    領域だけなので、理由は CA92.1。
+
+  **収集は書かない。** メールアドレスや表示名を持つのは Firebase Authentication で、
+  あちらが自分のマニフェストを同梱している。ここに並べると同じものを二重に申告することになる。
+  この層がしているのは資格情報の受け渡しだけで、自分では何も溜めない。
+
+  他のターゲット（`Authentication` / `AuthenticationApple` / `AuthenticationGoogle` /
+  `AuthenticationUI` / `AuthenticationAPI`）は理由の要る API を呼んでいないので持たせない。
+  **空のマニフェストを置くと「調べた結果ゼロ」と「置き忘れ」の区別がつかなくなる。**
+-->
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
