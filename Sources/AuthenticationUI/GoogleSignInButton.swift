@@ -3,13 +3,20 @@ import Authentication
 
 /// Google Sign-In ボタン。
 ///
-/// タップで `authenticationStore.signIn(using: .google)` を実行する。資格情報の取得は
-/// 合成ルートで注入された `GoogleCredentialProvider`（`AuthenticationGoogle`）が担う。
+/// Google のブランドガイドラインに沿った意匠（公式ロゴ・白地・アウトライン）を持つ。
+/// ロゴはこのターゲットのリソースにある本物で、`g.circle` のような似た記号で代用しない。
+///
+/// 押した後に何をするかは 2 通り（``AppleSignInButton`` と同じ形にしてある）:
+///
+/// - `init(title:onError:)` — `authenticationStore.signIn(using: .google)` を実行する。
+/// - `init(title:perform:)` — 渡された処理を実行する。**セッションを自前で持つアプリ向け。**
 public struct GoogleSignInButton: View {
     @Environment(\.authenticationStore) private var store
     @State private var isLoading = false
 
     private let title: String
+    /// 押されたときに走らせるもの。nil のときだけ `authenticationStore` を使う。
+    private let action: (@MainActor () async -> Void)?
     private let onError: (@MainActor (any Error) -> Void)?
 
     public init(
@@ -17,11 +24,22 @@ public struct GoogleSignInButton: View {
         onError: (@MainActor (any Error) -> Void)? = nil
     ) {
         self.title = title
+        self.action = nil
         self.onError = onError
     }
 
+    /// 押されたら `action` を実行する。ストアには触らない。
+    public init(
+        title: String = "Google でログイン",
+        perform action: @escaping @MainActor () async -> Void
+    ) {
+        self.title = title
+        self.action = action
+        self.onError = nil
+    }
+
     public var body: some View {
-        Button(action: signIn) {
+        Button(action: run) {
             HStack(spacing: 12) {
                 if isLoading {
                     ProgressView()
@@ -40,21 +58,34 @@ public struct GoogleSignInButton: View {
             .frame(height: 56)
         }
         .buttonStyle(GoogleSignInButtonStyle())
-        .disabled(store == nil || isLoading)
+        .disabled(isDisabled)
     }
 
-    private func signIn() {
-        guard let store else { return }
+    /// ストアを使う形のときだけ、ストアの不在で押せなくする。
+    private var isDisabled: Bool {
+        isLoading || (action == nil && store == nil)
+    }
+
+    private func run() {
         isLoading = true
         Task {
             defer { isLoading = false }
-            do {
-                try await store.signIn(using: .google)
-            } catch let error as AuthError where error.code == .cancelled {
-                // ユーザーキャンセルは無視
-            } catch {
-                onError?(error)
+            if let action {
+                await action()
+            } else {
+                await signInWithStore()
             }
+        }
+    }
+
+    private func signInWithStore() async {
+        guard let store else { return }
+        do {
+            try await store.signIn(using: .google)
+        } catch let error as AuthError where error.code == .cancelled {
+            // ユーザーキャンセルは無視
+        } catch {
+            onError?(error)
         }
     }
 }

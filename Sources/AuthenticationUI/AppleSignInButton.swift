@@ -4,14 +4,25 @@ import Authentication
 
 /// Sign in with Apple ボタン。
 ///
-/// 公式の `ASAuthorizationAppleIDButton` を表示し、タップで
-/// `authenticationStore.signIn(using: .apple)` を実行する。資格情報の取得フローは
-/// 合成ルートで注入された `AppleCredentialProvider`（`AuthenticationApple`）が担う。
+/// 公式の `ASAuthorizationAppleIDButton` を表示する。**Apple の意匠は自作しない** ——
+/// ロゴ・文言・角丸・最小サイズ・余白のすべてに規定があり、SF Symbol の `apple.logo` を
+/// 並べたリスト行は Sign in with Apple ボタンとして認められない（審査で落ちる）。
+/// このボタンが存在する理由は、その意匠をアプリ側に書かせないこと。
+///
+/// 押した後に何をするかは 2 通りある:
+///
+/// - `init(style:onError:)` — `authenticationStore.signIn(using: .apple)` を実行する。
+///   資格情報の取得は合成ルートで注入された `AppleCredentialProvider`（`AuthenticationApple`）が担う。
+/// - `init(style:perform:)` — 渡された処理を実行する。**セッションを自前で持つアプリ向け。**
+///   匿名アカウントの昇格（link）のように、このパッケージのストアに無い遷移を扱うことがある。
+///   意匠だけを借りたい側が、意匠を書き写さずに済むようにする。
 public struct AppleSignInButton: View {
     @Environment(\.authenticationStore) private var store
     @State private var isLoading = false
 
     private let style: ASAuthorizationAppleIDButton.Style
+    /// 押されたときに走らせるもの。nil のときだけ `authenticationStore` を使う。
+    private let action: (@MainActor () async -> Void)?
     private let onError: (@MainActor (any Error) -> Void)?
 
     public init(
@@ -19,15 +30,26 @@ public struct AppleSignInButton: View {
         onError: (@MainActor (any Error) -> Void)? = nil
     ) {
         self.style = style
+        self.action = nil
         self.onError = onError
+    }
+
+    /// 押されたら `action` を実行する。ストアには触らない（`authenticationStore` が無くても押せる）。
+    public init(
+        style: ASAuthorizationAppleIDButton.Style = .black,
+        perform action: @escaping @MainActor () async -> Void
+    ) {
+        self.style = style
+        self.action = action
+        self.onError = nil
     }
 
     public var body: some View {
         AppleIDButtonRepresentable(style: style) {
-            signIn()
+            run()
         }
         .frame(height: 56)
-        .disabled(store == nil || isLoading)
+        .disabled(isDisabled)
         .overlay {
             if isLoading {
                 RoundedRectangle(cornerRadius: 8)
@@ -37,18 +59,32 @@ public struct AppleSignInButton: View {
         }
     }
 
-    private func signIn() {
-        guard let store else { return }
+    /// ストアを使う形のときだけ、ストアの不在で押せなくする。
+    /// `action` を渡された形はストアを見ないので、無いことは押せない理由にならない。
+    private var isDisabled: Bool {
+        isLoading || (action == nil && store == nil)
+    }
+
+    private func run() {
         isLoading = true
         Task {
             defer { isLoading = false }
-            do {
-                try await store.signIn(using: .apple)
-            } catch let error as AuthError where error.code == .cancelled {
-                // ユーザーキャンセルは無視
-            } catch {
-                onError?(error)
+            if let action {
+                await action()
+            } else {
+                await signInWithStore()
             }
+        }
+    }
+
+    private func signInWithStore() async {
+        guard let store else { return }
+        do {
+            try await store.signIn(using: .apple)
+        } catch let error as AuthError where error.code == .cancelled {
+            // ユーザーキャンセルは無視
+        } catch {
+            onError?(error)
         }
     }
 }
