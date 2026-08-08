@@ -21,15 +21,24 @@ public struct AppleSignInButton: View {
     @State private var isLoading = false
 
     private let style: ASAuthorizationAppleIDButton.Style
+    /// ボタンの文言（「Apple でサインイン」/「Apple で続ける」/「Apple で登録」）。
+    ///
+    /// **並べる相手に合わせる。** 登録とサインインを人に選ばせないアプリでは、
+    /// 隣の Google が「つづける」なのにこちらだけ「サインイン」だと、
+    /// **押す前に違うことが起きると読まれる**（実際にそう報告された）。
+    /// Apple が用意している 3 つの文言はこのためにある。
+    private let type: ASAuthorizationAppleIDButton.ButtonType
     /// 押されたときに走らせるもの。nil のときだけ `authenticationStore` を使う。
     private let action: (@MainActor () async -> Void)?
     private let onError: (@MainActor (any Error) -> Void)?
 
     public init(
         style: ASAuthorizationAppleIDButton.Style = .black,
+        type: ASAuthorizationAppleIDButton.ButtonType = .signIn,
         onError: (@MainActor (any Error) -> Void)? = nil
     ) {
         self.style = style
+        self.type = type
         self.action = nil
         self.onError = onError
     }
@@ -37,15 +46,17 @@ public struct AppleSignInButton: View {
     /// 押されたら `action` を実行する。ストアには触らない（`authenticationStore` が無くても押せる）。
     public init(
         style: ASAuthorizationAppleIDButton.Style = .black,
+        type: ASAuthorizationAppleIDButton.ButtonType = .signIn,
         perform action: @escaping @MainActor () async -> Void
     ) {
         self.style = style
+        self.type = type
         self.action = action
         self.onError = nil
     }
 
     public var body: some View {
-        AppleIDButtonRepresentable(style: style) {
+        AppleIDButtonRepresentable(style: style, type: type) {
             run()
         }
         .frame(height: 56)
@@ -96,12 +107,13 @@ import UIKit
 
 private struct AppleIDButtonRepresentable: UIViewRepresentable {
     let style: ASAuthorizationAppleIDButton.Style
+    let type: ASAuthorizationAppleIDButton.ButtonType
     let action: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(action: action) }
 
     func makeUIView(context: Context) -> ASAuthorizationAppleIDButton {
-        let button = ASAuthorizationAppleIDButton(authorizationButtonType: .signIn, authorizationButtonStyle: style)
+        let button = ASAuthorizationAppleIDButton(authorizationButtonType: type, authorizationButtonStyle: style)
         button.addTarget(context.coordinator, action: #selector(Coordinator.didTap), for: .touchUpInside)
         return button
     }
@@ -121,12 +133,13 @@ import AppKit
 
 private struct AppleIDButtonRepresentable: NSViewRepresentable {
     let style: ASAuthorizationAppleIDButton.Style
+    let type: ASAuthorizationAppleIDButton.ButtonType
     let action: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(action: action) }
 
     func makeNSView(context: Context) -> ASAuthorizationAppleIDButton {
-        let button = ASAuthorizationAppleIDButton(authorizationButtonType: .signIn, authorizationButtonStyle: style)
+        let button = ASAuthorizationAppleIDButton(authorizationButtonType: type, authorizationButtonStyle: style)
         button.target = context.coordinator
         button.action = #selector(Coordinator.didTap)
         return button
