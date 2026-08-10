@@ -1,0 +1,10 @@
+version: 1
+builder:
+  configs:
+    - documentation_targets:
+        - Authentication
+        - AuthenticationAPI
+        - AuthenticationApple
+        - AuthenticationFirebase
+        - AuthenticationGoogle
+        - AuthenticationUI
