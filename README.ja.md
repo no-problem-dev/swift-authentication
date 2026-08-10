@@ -42,7 +42,7 @@ vendor 非依存なコア抽象に、Firebase / Apple / Google / REST の具象�
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "2.0.0")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "5.0.0")
 ]
 ```
 
