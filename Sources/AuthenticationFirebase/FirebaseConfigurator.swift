@@ -2,31 +2,36 @@ import Foundation
 @preconcurrency import FirebaseCore
 @preconcurrency import FirebaseAuth
 
-/// Firebase Authentication の初期化ユーティリティ。
+/// Starts Firebase for authentication and nothing else.
 ///
-/// このパッケージは **Firebase Authentication のみ** を対象とする
-/// （Firestore / Storage は含まない。データアクセスは REST API 経由）。
+/// The package deliberately pulls in **only Firebase Authentication** — no Firestore, no
+/// Storage — because application data goes through your own REST API.
 public enum FirebaseConfigurator {
 
-    /// Firebase Authentication 実行環境。
+    /// Which Firebase backend the app talks to.
     public enum Environment: Sendable {
-        /// Firebase クラウドの本番環境。
+        /// The live Firebase project: real accounts, real tokens.
         case production
-        /// ローカルで起動した Firebase Emulator Suite。デバッグ・テスト用。
+        /// A locally running Firebase Emulator Suite, for development and tests.
+        ///
+        /// Refused in release builds — see ``configure(environment:enableDebugMode:)``.
         case emulator(host: String = "localhost", port: Int = 9099)
 
         public static var defaultEmulator: Environment { .emulator() }
     }
 
-    /// Firebase を初期化する。
+    /// Configures Firebase. Call once, at launch, before anything touches authentication.
     ///
-    /// アプリ起動時に一度だけ呼ぶ。
+    /// - Parameters:
+    ///   - environment: Which backend to talk to. Defaults to the live project.
+    ///   - enableDebugMode: Turns on Firebase's verbose diagnostics by writing its debug flags
+    ///     to user defaults. Leave it off in shipping builds.
     ///
-    /// - Important: セキュリティのため、RELEASE ビルドでエミュレーター環境を指定すると
-    ///   `fatalError` でクラッシュする。
-    /// - Note: 初回起動（アプリインストール直後）には、キーチェーンに残った古いセッションを
-    ///   クリアするため、自動的に `Auth.signOut()` が実行される。再インストール後の
-    ///   意図しない自動ログインを防ぐための副作用。
+    /// - Important: Pointing a release build at the emulator would authenticate real users
+    ///   against a server that trusts everyone, so it traps instead of starting.
+    /// - Note: On the first launch after an install this signs out. Firebase keeps sessions in
+    ///   the keychain, which survives deleting the app, so without this a reinstall would
+    ///   silently restore the previous owner's session.
     public static func configure(
         environment: Environment = .production,
         enableDebugMode: Bool = false
@@ -44,7 +49,7 @@ public enum FirebaseConfigurator {
 
         FirebaseApp.configure()
 
-        // エミュレーター設定は FirebaseApp.configure() の後に行う必要がある。
+        // The emulator can only be selected after the app has been configured.
         if case .emulator(let host, let port) = environment {
             Auth.auth().useEmulator(withHost: host, port: port)
         }
@@ -52,19 +57,21 @@ public enum FirebaseConfigurator {
         signOutOnFirstLaunchIfNeeded()
     }
 
-    /// `GoogleService-Info.plist` 由来の Google OAuth クライアント ID。
+    /// The Google OAuth client ID that came from `GoogleService-Info.plist`, or `nil` before
+    /// Firebase has been configured.
     ///
-    /// `GoogleCredentialProvider(clientID:)` に渡す用途。利用側が
-    /// FirebaseCore に直接依存せず clientID を取得できる。
+    /// Feed it to `GoogleCredentialProvider(clientID:)`. It exists so the composition root can
+    /// reach the value without importing FirebaseCore itself.
     public static var googleClientID: String? {
         FirebaseApp.app()?.options.clientID
     }
 
-    /// 初回起動時の自動サインアウト。
+    /// Signs out on the first launch after an install.
     ///
-    /// Firebase Auth はキーチェーンにログイン状態を永続化するため、アプリ削除後の
-    /// 再インストールでも自動ログインが復元されてしまう。UserDefaults の初回起動フラグで
-    /// 初回のみサインアウトし、クリーンな状態を保証する。
+    /// Firebase persists the session in the keychain, which is not removed when the app is
+    /// deleted, so a reinstall would otherwise restore whoever was signed in before. User
+    /// defaults are cleared by deletion, which makes their emptiness a reliable signal that
+    /// this is a fresh install.
     private static func signOutOnFirstLaunchIfNeeded() {
         guard FirebaseApp.app() != nil else { return }
 

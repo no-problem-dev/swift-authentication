@@ -2,33 +2,34 @@ import SwiftUI
 import AuthenticationServices
 import Authentication
 
-/// Sign in with Apple ボタン。
+/// The official Sign in with Apple button, wired either to the store or to your own action.
 ///
-/// 公式の `ASAuthorizationAppleIDButton` を表示する。**Apple の意匠は自作しない** ——
-/// ロゴ・文言・角丸・最小サイズ・余白のすべてに規定があり、SF Symbol の `apple.logo` を
-/// 並べたリスト行は Sign in with Apple ボタンとして認められない（審査で落ちる）。
-/// このボタンが存在する理由は、その意匠をアプリ側に書かせないこと。
+/// It presents `ASAuthorizationAppleIDButton` rather than drawing anything. **Do not rebuild
+/// Apple's treatment by hand** — the logo, wording, corner radius, minimum size and padding
+/// are all specified, and a row assembled from the `apple.logo` symbol is not accepted as a
+/// Sign in with Apple button, which is a review rejection. This type exists so no app has to
+/// reproduce it.
 ///
-/// 押した後に何をするかは 2 通りある:
+/// What happens on tap comes in two forms:
 ///
-/// - `init(style:onError:)` — `authenticationStore.signIn(using: .apple)` を実行する。
-///   資格情報の取得は合成ルートで注入された `AppleCredentialProvider`（`AuthenticationApple`）が担う。
-/// - `init(style:perform:)` — 渡された処理を実行する。**セッションを自前で持つアプリ向け。**
-///   匿名アカウントの昇格（link）のように、このパッケージのストアに無い遷移を扱うことがある。
-///   意匠だけを借りたい側が、意匠を書き写さずに済むようにする。
+/// - `init(style:type:onError:)` — signs in through the store in the environment, using
+///   whichever Apple credential provider the composition root registered.
+/// - `init(style:type:perform:)` — runs what you pass instead. **For apps that own their own
+///   session**, such as linking an anonymous account, where the transition does not exist in
+///   this package's store. They borrow the treatment without copying it.
 public struct AppleSignInButton: View {
     @Environment(\.authenticationStore) private var store
     @State private var isLoading = false
 
     private let style: ASAuthorizationAppleIDButton.Style
-    /// ボタンの文言（「Apple でサインイン」/「Apple で続ける」/「Apple で登録」）。
+    /// The wording on the button: sign in, continue, or sign up.
     ///
-    /// **並べる相手に合わせる。** 登録とサインインを人に選ばせないアプリでは、
-    /// 隣の Google が「つづける」なのにこちらだけ「サインイン」だと、
-    /// **押す前に違うことが起きると読まれる**（実際にそう報告された）。
-    /// Apple が用意している 3 つの文言はこのためにある。
+    /// **Match whatever stands next to it.** In an app that does not ask people to choose
+    /// between registering and signing in, a button reading "Sign in" beside a Google button
+    /// reading "Continue" is **read as doing something different before it is pressed** —
+    /// which is exactly what users reported. Apple ships three variants for this reason.
     private let type: ASAuthorizationAppleIDButton.ButtonType
-    /// 押されたときに走らせるもの。nil のときだけ `authenticationStore` を使う。
+    /// What to run on tap. Only when this is `nil` does the button reach for the store.
     private let action: (@MainActor () async -> Void)?
     private let onError: (@MainActor (any Error) -> Void)?
 
@@ -43,7 +44,9 @@ public struct AppleSignInButton: View {
         self.onError = onError
     }
 
-    /// 押されたら `action` を実行する。ストアには触らない（`authenticationStore` が無くても押せる）。
+    /// Creates a button that runs your action on tap.
+    ///
+    /// It never reads the store, so it stays enabled with nothing injected in the environment.
     public init(
         style: ASAuthorizationAppleIDButton.Style = .black,
         type: ASAuthorizationAppleIDButton.ButtonType = .signIn,
@@ -70,8 +73,9 @@ public struct AppleSignInButton: View {
         }
     }
 
-    /// ストアを使う形のときだけ、ストアの不在で押せなくする。
-    /// `action` を渡された形はストアを見ないので、無いことは押せない理由にならない。
+    /// Disabled while a sign-in is running, and — in the store-backed form only — when no
+    /// store was injected. The action form never reads the store, so its absence is not a
+    /// reason to block the tap.
     private var isDisabled: Bool {
         isLoading || (action == nil && store == nil)
     }
@@ -93,7 +97,7 @@ public struct AppleSignInButton: View {
         do {
             try await store.signIn(using: .apple)
         } catch let error as AuthError where error.code == .cancelled {
-            // ユーザーキャンセルは無視
+            // A dismissed sheet is a normal outcome, not something to report.
         } catch {
             onError?(error)
         }

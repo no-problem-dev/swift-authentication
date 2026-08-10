@@ -6,9 +6,12 @@ enum FirebaseAuthenticatorError: Error {
     case invalidCredential(Authentication.AuthProviderID)
 }
 
-/// 中立な ``AuthCredential`` を Firebase の資格情報に変換する。
+/// Converts a neutral credential into the Firebase credential type.
 enum FirebaseCredentialMapper {
-    /// - Returns: 匿名認証の場合は `nil`（呼び出し側で `signInAnonymously` を使う）。
+    /// - Returns: `nil` for anonymous sign-in, which has no credential to convert — the
+    ///   caller opens an anonymous session instead.
+    /// - Throws: When the credential is missing a field its provider requires, such as an
+    ///   Apple credential without its raw nonce.
     static func makeCredential(
         from credential: Authentication.AuthCredential
     ) throws -> FirebaseAuth.AuthCredential? {

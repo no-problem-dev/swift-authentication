@@ -2,32 +2,37 @@ import Foundation
 @preconcurrency import FirebaseAuth
 import Authentication
 
-/// Firebase Authentication によるセッション交換（交換層の具象）。
+/// Exchanges credentials for a session using Firebase Authentication.
 ///
-/// 中立な ``AuthCredential`` を Firebase の資格情報に変換し、認証サーバと交換する。
+/// Converts the neutral `AuthCredential` into Firebase's own credential type and trades it
+/// for a session. Firebase stores that session in the keychain, which outlives the process and
+/// even the app's deletion — see `FirebaseConfigurator` for why that matters on reinstall.
 public final class FirebaseAuthenticator: Authenticator, @unchecked Sendable {
     private let auth: Auth
 
-    /// `FirebaseAuthenticator` を組み立てる。
+    /// Creates an authenticator.
     ///
-    /// - Parameter auth: 使用する `Auth` インスタンス。テストでモック注入する場合に指定する。
-    ///   省略時はシングルトン `Auth.auth()` を使用する。
+    /// - Parameter auth: The Firebase authentication instance to use. Defaults to the shared
+    ///   one; pass another only to substitute it in tests.
     public init(auth: Auth = Auth.auth()) {
         self.auth = auth
     }
 
-    /// 現在のユーザー（未認証なら `nil`）。
+    /// Returns the user restored from the keychain-backed session, or `nil` when there is
+    /// none. Reads local state only — no network call, no token refresh.
     public func currentUser() async -> AuthUser? {
         auth.currentUser.map(FirebaseUserMapper.map)
     }
 
-    /// `credential` を Firebase Authentication と交換し、認証済みユーザーを返す。
+    /// Trades a credential for a Firebase session and returns the user it belongs to.
     ///
-    /// `credential` が匿名認証に対応する場合（プロバイダ未設定）は `signInAnonymously()` を実行する。
+    /// An anonymous credential carries no tokens, so it opens an anonymous session instead of
+    /// being exchanged.
     ///
-    /// - Parameter credential: 取得層から渡された資格情報。
-    /// - Returns: 認証済みユーザー。
-    /// - Throws: Firebase の認証エラー。
+    /// - Parameter credential: What the acquisition layer produced.
+    /// - Returns: The signed-in user.
+    /// - Throws: Firebase's authentication error, or a mapping error when the credential is
+    ///   missing the fields its provider requires.
     public func signIn(with credential: Authentication.AuthCredential) async throws -> AuthUser {
         let result: AuthDataResult
         if let firebaseCredential = try FirebaseCredentialMapper.makeCredential(from: credential) {
@@ -38,16 +43,21 @@ public final class FirebaseAuthenticator: Authenticator, @unchecked Sendable {
         return FirebaseUserMapper.map(result.user)
     }
 
-    /// サインアウトする。
+    /// Clears the keychain-backed session.
     ///
-    /// - Throws: Firebase からのサインアウトエラー。
+    /// Identity tokens already issued remain valid until they expire, so a backend that needs
+    /// immediate lockout has to revoke them itself.
+    ///
+    /// - Throws: Firebase's sign-out error.
     public func signOut() async throws {
         try auth.signOut()
     }
 
-    /// 現在のアカウントを削除する。
+    /// Deletes the Firebase account itself, not just the local session. Irreversible.
     ///
-    /// - Throws: 未認証の場合は ``AuthError/notAuthenticated``。それ以外は Firebase のエラー。
+    /// - Throws: `AuthError.notAuthenticated` when no one is signed in. Firebase refuses
+    ///   outright when the last sign-in is too old, and that refusal is thrown as-is — recover
+    ///   by signing the user in again and retrying.
     public func deleteAccount() async throws {
         guard let user = auth.currentUser else {
             throw AuthError.notAuthenticated
@@ -55,10 +65,11 @@ public final class FirebaseAuthenticator: Authenticator, @unchecked Sendable {
         try await user.delete()
     }
 
-    /// 認証状態の変化を流すストリーム。
+    /// A stream of the signed-in user, emitting `nil` while signed out.
     ///
-    /// 購読開始時に現在の状態を即座に流す（Firebase の `addStateDidChangeListener` の挙動）。
-    /// サインアウトまたは未認証の場合は `nil` を流す。
+    /// The current value arrives as soon as the stream is iterated, which is Firebase's
+    /// listener behaviour and what `AuthenticationStore` relies on to leave its checking
+    /// state. The listener is removed when iteration ends.
     public func authStateChanges() -> AsyncStream<AuthUser?> {
         AsyncStream { continuation in
             nonisolated(unsafe) let handle = auth.addStateDidChangeListener { _, user in

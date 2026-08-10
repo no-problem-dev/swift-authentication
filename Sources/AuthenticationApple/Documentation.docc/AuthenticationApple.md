@@ -1,42 +1,47 @@
 # ``AuthenticationApple``
 
-Sign in with Apple の資格情報取得を担う ``Authentication/CredentialProvider`` 実装。
+Sign in with Apple, as a `CredentialProvider` the rest of the package can use.
 
 ## Overview
 
-`AuthenticationApple` は `ASAuthorizationController` を起動し、
-nonce のハッシュ処理（SHA256）と生 nonce の保持を正しく行いながら
-vendor 非依存な ``Authentication/AuthCredential`` を生成する。
-生成した資格情報は `AuthenticationFirebase` の `FirebaseAuthenticator` など、
-``Authentication/Authenticator`` を実装した交換層に渡される。
+`AuthenticationApple` presents `ASAuthorizationController` and turns what comes back into a
+vendor-agnostic `AuthCredential`. It owns the nonce handling that makes the result verifiable:
+the request carries the SHA-256 hash, the credential carries the raw value, and the server
+matches the two to rule out a replayed identity token.
+
+Create a provider and hand it to the store's `credentialProviders`; the credential it produces
+goes on to whatever implements the `Authenticator` protocol, normally `FirebaseAuthenticator`.
 
 ```swift
-import Authentication
 import AuthenticationApple
-import AuthenticationFirebase
 
-// 合成ルートでの組み立て例（clientID・APIキー等はダミー）
-let store = AuthenticationStore(
-    authenticator: FirebaseAuthenticator(),
-    credentialProviders: [
-        AppleCredentialProvider()                        // 氏名・メールを要求（既定）
-        // AppleCredentialProvider(requestedScopes: [.email])  // メールのみ要求する場合
-    ]
-)
+// Asks for the full name and the email address.
+let apple = AppleCredentialProvider()
 
-// サインイン（AuthenticationUI の AppleSignInButton が内部で呼び出す）
-try await store.signIn(using: .apple)
+// Ask for less when the app has no use for the rest.
+let emailOnly = AppleCredentialProvider(requestedScopes: [.email])
 ```
 
-``Authentication/AuthCredential`` を手動で組み立てる場合は、
-このモジュールが提供する `AuthCredential.apple(idToken:rawNonce:fullName:)` ファクトリを使用する。
+Apple returns the user's name only on the very first authorization for an account. An app that
+wants it has to persist it during that sign-in — asking again later yields nothing.
+
+To assemble a credential by hand, when linking accounts for instance, use the factory this
+module adds:
+
+```swift
+let credential = AuthCredential.apple(
+    idToken: identityToken,
+    rawNonce: nonce,          // The value before hashing, not what went on the request.
+    fullName: name
+)
+```
 
 ## Topics
 
-### 資格情報プロバイダ
+### Credential provider
 
 - ``AppleCredentialProvider``
 
-### ファクトリ拡張
+### Factory
 
 - ``Authentication/AuthCredential/apple(idToken:rawNonce:fullName:)``

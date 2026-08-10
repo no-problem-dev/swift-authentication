@@ -1,77 +1,85 @@
 # ``Authentication``
 
-vendor 非依存の認証抽象層 — プロトコル・モデル・ステートストアを提供するパッケージのコアモジュール。
+The vendor-agnostic core: the protocols, the value types, and the store that holds the session.
 
 ## Overview
 
-`Authentication` はサインインフローを **取得 → 交換 → ログイン後処理** の 3 層に分割し、
-Firebase や Apple Sign In などの具体的な SDK に依存しないインターフェースを提供する。
-アプリのほとんどのコードはこのモジュールにのみ依存し、SDK の詳細は別モジュールで注入する。
+`Authentication` splits signing in into three steps — **acquire, exchange, then finish
+setting the user up** — and describes each one as a protocol that mentions no SDK. Nearly all
+of an app's code depends on this module alone; the concrete implementations are injected at
+the composition root.
 
-中核となるステートホルダは ``AuthenticationStore`` だ。
-`@Observable` な ``AuthenticationState`` を保持し、SwiftUI の View が認証状態に応じて画面を切り替えられる。
+``AuthenticationStore`` is the piece that holds everything together. It publishes an
+observable ``AuthenticationState`` that SwiftUI views switch on.
 
 ```swift
 import Authentication
 
-// 合成ルートで組み立て（具象は別モジュール）
+// Assembled at the composition root; the concretions come from the other modules.
 let store = AuthenticationStore(
-    authenticator: myAuthenticator,           // AuthenticationFirebase など
-    postAuthentication: myPostAction,         // AuthenticationAPI など
+    authenticator: myAuthenticator,           // e.g. AuthenticationFirebase
+    postAuthentication: myPostAction,         // e.g. AuthenticationAPI
     credentialProviders: [myAppleProvider, myGoogleProvider]
 )
 
-// サインイン（プロバイダ識別子で指定）
+// Sign in by provider identifier.
 try await store.signIn(using: .apple)
 
-// サインアウト
+// Sign out.
 try await store.signOut()
 ```
 
-``AuthenticationState`` は `.checking` → `.unauthenticated` → `.authenticatedPendingProvisioning` → `.authenticated(AuthUser)` の順に遷移する。
-エラーが発生すると `.error(any Error)` に移行する。
+``AuthenticationState`` moves from `.checking` to `.unauthenticated` to
+`.authenticatedPendingProvisioning` to `.authenticated(AuthUser)`, and to
+`.error(any Error)` when something along the way fails. Only the last of those means the
+account is ready to use: while provisioning is pending the session exists but the app should
+still be showing a loading state.
 
-### パッケージ構成
+### Module layout
 
-このパッケージは 6 つのモジュールで構成されている。アプリは合成ルートで必要な具象を組み合わせ、
-ドメイン層は `Authentication` のみに依存させるアーキテクチャを想定。
+The package is six modules. An app combines the concretions it needs at the composition root
+and keeps its domain layer depending on `Authentication` only.
 
-- **Authentication**（このモジュール）: プロトコル・モデル・``AuthenticationStore`` を含むコア。ドメイン層はここにのみ依存する。
-- **AuthenticationUI**: ``AuthenticatedRootView``・``AppleSignInButton``・``GoogleSignInButton`` など SwiftUI コンポーネントを提供する。
-- **AuthenticationApple**: Sign in with Apple の資格情報取得を担う `AppleCredentialProvider` を提供する。
-- **AuthenticationGoogle**: Google Sign-In の資格情報取得を担う `GoogleCredentialProvider` と URL ハンドリングの `GoogleURLHandler` を提供する。
-- **AuthenticationFirebase**: Firebase Authentication によるセッション交換 `FirebaseAuthenticator` と ID トークン供給 `FirebaseTokenProvider`、初期化ユーティリティ `FirebaseConfigurator` を提供する。
-- **AuthenticationAPI**: REST API を介したログイン後処理 `APIUserProvisioning` と、swift-api-client への橋渡し `APITokenProviderAdapter` を提供する。
+- **Authentication** (this module): the protocols, the value types and ``AuthenticationStore``.
+- **AuthenticationUI**: SwiftUI components — `AuthenticatedRootView`, `AppleSignInButton`,
+  `GoogleSignInButton`.
+- **AuthenticationApple**: `AppleCredentialProvider`, which runs Sign in with Apple.
+- **AuthenticationGoogle**: `GoogleCredentialProvider` and the `GoogleURLHandler` that
+  completes the browser round trip.
+- **AuthenticationFirebase**: `FirebaseAuthenticator` for the exchange, `FirebaseTokenProvider`
+  for bearer tokens, and `FirebaseConfigurator` for start-up.
+- **AuthenticationAPI**: `APIUserProvisioning` for post-sign-in work over REST, and
+  `APITokenProviderAdapter` for wiring tokens into swift-api-client.
 
 ## Topics
 
-### ステートストア
+### The store
 
 - ``AuthenticationStore``
 
-### プロトコル
+### Protocols
 
 - ``Authenticator``
 - ``CredentialProvider``
 - ``PostAuthenticationAction``
 - ``AuthTokenProviding``
 
-### 認証状態・ユーザー
+### State and the user
 
 - ``AuthenticationState``
 - ``AuthUser``
 
-### 資格情報・プロバイダ識別子
+### Credentials and provider identifiers
 
 - ``AuthCredential``
 - ``AuthProviderID``
 - ``PersonName``
 
-### ログイン後処理
+### Post-authentication work
 
 - ``NoPostAuthentication``
 - ``CompositePostAuthentication``
 
-### エラー
+### Errors
 
 - ``AuthError``

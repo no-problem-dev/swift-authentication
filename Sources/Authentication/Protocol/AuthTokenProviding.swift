@@ -1,11 +1,16 @@
 import Foundation
 
-/// 認証トークンを供給する vendor 非依存な抽象。
+/// Supplies the current authentication token to code that must not know where it came from.
 ///
-/// REST クライアント等へ ID トークンを渡すための境界。Firebase 実装は
-/// `AuthenticationFirebase` の `FirebaseTokenProvider`、swift-api-client への
-/// 橋渡しは `AuthenticationAPI` の `APITokenProviderAdapter` が担当する。
+/// This is the seam that lets a REST client send `Authorization: Bearer` without importing an
+/// authentication SDK. `AuthenticationFirebase` conforms with `FirebaseTokenProvider`, and
+/// `AuthenticationAPI` bridges that to swift-api-client with `APITokenProviderAdapter`.
 public protocol AuthTokenProviding: Sendable {
-    /// 現在の認証トークン。未認証なら `nil`。取得処理そのものの失敗は throw する。
+    /// Returns a token that is valid right now, refreshing it if the stored one has expired.
+    ///
+    /// - Returns: The token, or `nil` when nobody is signed in.
+    /// - Throws: Whatever the refresh raised. A failed refresh must never be reported as
+    ///   `nil`, or the caller sends an unauthenticated request and sees a puzzling rejection
+    ///   instead of the real error.
     func token() async throws -> String?
 }

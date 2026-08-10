@@ -1,14 +1,14 @@
 import Foundation
 import APIClient
 
-/// 既定のユーザープロビジョニング API 契約（`POST <path>`、既定は `/auth/initialize`）。
+/// The request this package sends to provision a user: a `POST` to a caller-chosen path.
 ///
-/// swift-api-contract の自己エンコード契約（`Input == Self`）として実装。
-/// パスは `init(path:)` で差し替え可能。
+/// A self-encoding contract (`Input == Self`) whose path belongs to the instance rather than
+/// the type, so one contract serves any endpoint.
 ///
-/// レスポンスの本文は読まない（``EmptyOutput``）。プロビジョニングの結果として
-/// このパッケージが使うのは成否だけで、本文の形はアプリごとに違う。固定の DTO を
-/// 要求すると、バックエンドが形を変えた瞬間にデコード失敗＝サインイン不能になる。
+/// The response body is deliberately left unread. All this package needs is success or
+/// failure, and body shapes differ per app: demanding a fixed payload would turn any backend
+/// change into a decoding error, which reaches the user as sign-in being broken.
 public struct UserProvisioningContract: APIContract, APIInput {
     public typealias Input = Self
     public typealias Output = EmptyOutput
@@ -22,12 +22,14 @@ public struct UserProvisioningContract: APIContract, APIInput {
         self.path = path
     }
 
-    /// 完全パスは `init(path:)` の値を使う（Group/subPath ではなくインスタンス指定）。
+    /// Returns the path carried by the instance, ignoring the group and sub-path the protocol
+    /// would otherwise assemble.
     public static func resolvePath(with input: Self) -> String {
         input.path
     }
 
-    /// クライアント専用契約（サーバ側デコードは未使用）。
+    /// Never used: this contract is only ever sent, so decoding an incoming request yields an
+    /// empty value rather than a meaningful one.
     public static func decode(
         pathParameters: [String: String],
         queryParameters: [String: String],

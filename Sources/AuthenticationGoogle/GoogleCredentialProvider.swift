@@ -8,18 +8,18 @@ import UIKit
 import AppKit
 #endif
 
-/// Google Sign-In の資格情報取得（取得層の具象）。
+/// Runs Google Sign-In and returns the credential it produced.
 ///
-/// `clientID` は合成ルートから注入する（FirebaseCore に依存しないため、
-/// `FirebaseApp.app()?.options.clientID` をアプリ側から渡す想定）。
+/// The client ID is injected rather than read from Firebase, which is what keeps this target
+/// clear of FirebaseCore. Apps that use Firebase can pass `FirebaseConfigurator.googleClientID`.
 public final class GoogleCredentialProvider: CredentialProvider, @unchecked Sendable {
     public let providerID = AuthProviderID.google
     private let clientID: String
 
-    /// Google 資格情報プロバイダを生成する。
+    /// Creates a provider.
     ///
-    /// - Parameter clientID: Google OAuth クライアント ID。
-    ///   `FirebaseConfigurator.googleClientID` から取得するか、アプリの `Info.plist` から直接渡す。
+    /// - Parameter clientID: The Google OAuth client ID, taken from
+    ///   `FirebaseConfigurator.googleClientID` or read from the app's `Info.plist`.
     public init(clientID: String) {
         self.clientID = clientID
     }
@@ -66,7 +66,10 @@ public final class GoogleCredentialProvider: CredentialProvider, @unchecked Send
         #endif
     }
 
-    /// GIDSignInError のキャンセル（domain "com.google.GIDSignIn", code -5）を判定する。
+    /// Whether the error is the user dismissing the consent screen.
+    ///
+    /// GoogleSignIn reports that as code -5 in its own error domain rather than as a distinct
+    /// type, so matching it means matching the domain and the number.
     private static func isCancellation(_ error: any Error) -> Bool {
         let nsError = error as NSError
         return nsError.domain == "com.google.GIDSignIn" && nsError.code == -5

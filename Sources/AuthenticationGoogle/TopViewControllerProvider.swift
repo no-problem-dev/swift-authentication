@@ -1,7 +1,10 @@
 #if canImport(UIKit)
 import UIKit
 
-/// 現在最前面の `UIViewController` を解決する。
+/// Finds the view controller Google Sign-In should present from.
+///
+/// Walks past anything already presented, so the consent screen is not put up behind a sheet
+/// that is already on screen.
 @MainActor
 enum TopViewControllerProvider {
     static func topViewController() -> UIViewController? {

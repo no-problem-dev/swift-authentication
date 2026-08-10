@@ -1,25 +1,39 @@
 import Foundation
 
-/// 認証状態。`AuthenticationStore` が保持し、View が観測して画面を切り替える。
+/// The stage a sign-in session has reached.
+///
+/// ``AuthenticationStore`` owns the value and views switch on it to decide what to show.
 public enum AuthenticationState {
-    /// 初期状態。認証状態を確認中。
+    /// The starting point, while a stored session is being restored.
+    ///
+    /// Not the same as being signed out — show a launch screen here, not the sign-in screen.
     case checking
-    /// 未認証。
+    /// No session: none was stored, or the user signed out. The only state that should show
+    /// the sign-in screen.
     case unauthenticated
-    /// 認証サーバでの交換は完了したが、ログイン後処理（プロビジョニング）が未完了。
+    /// The credential was exchanged, but the post-authentication work has not finished.
+    ///
+    /// Keep showing a loading state: the session exists, yet the account may not be usable
+    /// until provisioning completes.
     case authenticatedPendingProvisioning
-    /// 完全に認証済み（交換 + プロビジョニング完了）。
+    /// Fully signed in — exchanged and provisioned. The only state that should show app content.
     case authenticated(AuthUser)
-    /// エラー。
+    /// The exchange or the post-authentication work failed.
+    ///
+    /// Not necessarily terminal: a failed provisioning is retried on the next auth-state
+    /// change, and the underlying session may still be live.
     case error(any Error)
 
-    /// `.authenticated` ケースなら `true`。プロビジョニング完了後の状態にのみ `true` を返す。
+    /// Whether the session is fully usable.
+    ///
+    /// Stays `false` while post-authentication work is pending, so it is safe to gate app
+    /// content on.
     public var isAuthenticated: Bool {
         if case .authenticated = self { return true }
         return false
     }
 
-    /// 認証済みの場合のユーザー。
+    /// The signed-in user, or `nil` in every other state — including while provisioning runs.
     public var user: AuthUser? {
         if case .authenticated(let user) = self { return user }
         return nil

@@ -2,7 +2,7 @@ import Foundation
 @preconcurrency import FirebaseAuth
 import Authentication
 
-/// Firebase の `User` を vendor 非依存な ``AuthUser`` に変換する。
+/// Converts a Firebase user into the vendor-neutral user value the core deals in.
 enum FirebaseUserMapper {
     static func map(_ user: User) -> AuthUser {
         AuthUser(

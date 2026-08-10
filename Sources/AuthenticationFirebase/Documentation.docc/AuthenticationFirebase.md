@@ -1,54 +1,64 @@
 # ``AuthenticationFirebase``
 
-Firebase Authentication によるセッション交換・トークン供給・初期化ユーティリティ。
+Session exchange, identity tokens and start-up, backed by Firebase Authentication.
 
 ## Overview
 
-`AuthenticationFirebase` は ``Authentication/Authenticator`` プロトコルを Firebase で実装し、
-vendor 非依存な ``Authentication/AuthCredential`` を Firebase 資格情報に変換してセッション交換を行う。
-また、REST クライアントへ ID トークンを渡す ``Authentication/AuthTokenProviding`` の実装と、
-Firebase の初期化ユーティリティも提供する。
+`AuthenticationFirebase` implements the `Authenticator` protocol on top of Firebase: it
+converts a vendor-agnostic `AuthCredential` into Firebase's own credential
+type and trades it for a session. It also supplies identity tokens through
+`AuthTokenProviding` and configures Firebase at launch.
 
-アプリ起動時に ``FirebaseConfigurator/configure(environment:enableDebugMode:)`` を一度呼ぶ。
-開発環境では `.emulator` を指定すると Firebase Local Emulator Suite に接続できる。
+Only Firebase Authentication is pulled in — no Firestore, no Storage — so application data
+stays behind your own API.
+
+Call ``FirebaseConfigurator/configure(environment:enableDebugMode:)`` once at launch. During
+development, `.emulator` points the app at the Firebase Local Emulator Suite; release builds
+refuse it outright, because authenticating real users against an emulator would mean trusting
+anyone who can reach it.
 
 ```swift
 import AuthenticationFirebase
 
-// AppDelegate または @main 構造体の初期化時に一度だけ呼ぶ
-// enableDebugMode は RELEASE では無効化すること（下記参照）
+// Once, from the app's initializer or the app delegate.
 FirebaseConfigurator.configure(environment: .production)
 
-// 開発時（デバッグビルドのみ使用可）
+// During development, debug builds only.
 // FirebaseConfigurator.configure(environment: .emulator(host: "localhost", port: 9099))
 ```
 
-``FirebaseAuthenticator`` と ``FirebaseTokenProvider`` は合成ルートで ``Authentication/AuthenticationStore`` へ注入する。
+Configuring also signs out on the first launch after an install. Firebase keeps sessions in
+the keychain, which survives deleting the app, so without that step a reinstall would silently
+restore whoever was signed in before.
+
+``FirebaseAuthenticator`` and ``FirebaseTokenProvider`` are injected into
+`AuthenticationStore` at the composition root.
 
 ```swift
 import Authentication
 import AuthenticationFirebase
 
-let authenticator = FirebaseAuthenticator()       // Auth.auth() を既定で使用
+let authenticator = FirebaseAuthenticator()       // Uses the shared Auth instance.
 let tokenProvider = FirebaseTokenProvider()
 
 let store = AuthenticationStore(authenticator: authenticator)
 ```
 
-``FirebaseConfigurator/googleClientID`` を使うと、FirebaseCore に直接依存せずに
-`GoogleService-Info.plist` 由来のクライアント ID を取得できる。
+``FirebaseConfigurator/googleClientID`` reads the client ID out of `GoogleService-Info.plist`,
+so the composition root can hand it to `GoogleCredentialProvider` without importing
+FirebaseCore itself.
 
 ## Topics
 
-### 初期化
+### Start-up
 
 - ``FirebaseConfigurator``
 - ``FirebaseConfigurator/Environment``
 
-### セッション交換
+### Session exchange
 
 - ``FirebaseAuthenticator``
 
-### トークン供給
+### Tokens
 
 - ``FirebaseTokenProvider``

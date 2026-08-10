@@ -2,26 +2,26 @@ import Foundation
 import APIClient
 import Authentication
 
-/// コアの ``AuthTokenProviding`` を swift-api-client の `AuthTokenProvider` に橋渡しする。
+/// Bridges this package's token abstraction to the one swift-api-client expects.
 ///
-/// これにより、`AuthenticationFirebase` の `FirebaseTokenProvider`（vendor 非依存な
-/// ``AuthTokenProviding``）を APIClient に注入できる。Firebase ターゲットは
-/// swift-api-client に依存せず、API ターゲットは Firebase に依存しない。
+/// The adapter is what keeps the two dependencies apart: the Firebase target never imports
+/// swift-api-client and this target never imports Firebase. Wrap a `FirebaseTokenProvider` in
+/// one of these to give an API client the source of its `Authorization: Bearer` header.
 public struct APITokenProviderAdapter: AuthTokenProvider {
     private let provider: any AuthTokenProviding
 
-    /// `AuthTokenProviding` 実装を APIClient の `AuthTokenProvider` に変換する。
+    /// Wraps a token provider so an API client can use it.
     ///
-    /// - Parameter provider: コアの token プロバイダ（例: `FirebaseTokenProvider`）。
+    /// - Parameter provider: The token source, for example `FirebaseTokenProvider`.
     public init(_ provider: any AuthTokenProviding) {
         self.provider = provider
     }
 
-    /// トークンを取得して返す。
+    /// Asks the wrapped provider for a token.
     ///
-    /// - Returns: 有効なトークン文字列。未認証の場合は `nil`。
-    /// - Throws: トークン取得に失敗した場合、下位の ``Authentication/AuthTokenProviding``
-    ///   のエラーをそのまま伝播する。
+    /// - Returns: A token valid right now, or `nil` when nobody is signed in.
+    /// - Throws: Whatever the wrapped provider raised, unchanged — a failed refresh must reach
+    ///   the caller rather than turn into a silently unauthenticated request.
     public func fetchToken() async throws -> String? {
         try await provider.token()
     }

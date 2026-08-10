@@ -63,12 +63,12 @@ struct AuthenticationStoreTests {
         let postAuth = MockPostAuthenticationAction()
         let store = AuthenticationStore(authenticator: authenticator, postAuthentication: postAuth)
 
-        // Firebase の listener が同一ユーザーで複数回発火する状況を再現。
+        // Reproduce a listener firing repeatedly for the same user.
         authenticator.emit(user)
         authenticator.emit(user)
         authenticator.emit(user)
         await waitUntil { store.state.isAuthenticated }
-        // さらに発火しても増えないこと。
+        // Firing again must not provision again.
         authenticator.emit(user)
         await waitUntil { postAuth.performCallCount > 1 }
 
@@ -94,7 +94,7 @@ struct AuthenticationStoreTests {
         authenticator.emit(user)
         await waitUntil { postAuth.performCallCount == 2 }
         #expect(postAuth.performCallCount == 2)
-        #expect(store.state == .authenticated(user))   // store を最後まで生存させる
+        #expect(store.state == .authenticated(user))   // Keeps the store alive to the end.
     }
 
     // MARK: - State transitions
@@ -236,7 +236,7 @@ struct AuthenticationStoreTests {
         try await store.deleteAccount()
         await waitUntil { store.state == .unauthenticated }
 
-        // 同一 ID での再登録を模擬。削除で予約が解除され、再度プロビジョニングされること。
+        // Signing back in under the same ID: the claim was released, so provisioning reruns.
         authenticator.emit(user)
         await waitUntil { postAuth.performCallCount == 2 }
         #expect(postAuth.performCallCount == 2)
@@ -279,7 +279,7 @@ struct AuthenticationStoreTests {
             Issue.record("unexpected error: \(error)")
         }
         #expect(authenticator.deleteCallCount == 1)
-        #expect(store.state == .authenticated(user))   // 失敗時はサインイン状態のまま
+        #expect(store.state == .authenticated(user))   // A failure leaves the session signed in.
     }
 
     @Test("deleteAccount wraps .notAuthenticated from the authenticator as .deleteAccountFailed")

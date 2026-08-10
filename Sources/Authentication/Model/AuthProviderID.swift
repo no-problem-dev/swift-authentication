@@ -1,10 +1,10 @@
 import Foundation
 
-/// 認証プロバイダの識別子。
+/// An identifier for a sign-in provider, open to values this package has never heard of.
 ///
-/// 特定のベンダー（Firebase など）に依存しない汎用的な識別子。
-/// 閉じた `enum` ではなく `RawRepresentable` な構造体にすることで、
-/// パッケージを変更せずに独自プロバイダを追加できる。
+/// A `RawRepresentable` struct rather than a closed `enum` on purpose: adding your own
+/// provider takes no change here. The raw values are the same strings an authentication
+/// server reports, so an identifier survives the round trip into ``AuthUser/providerIDs``.
 ///
 /// ```swift
 /// let custom = AuthProviderID(rawValue: "oidc.acme")
@@ -16,13 +16,16 @@ public struct AuthProviderID: RawRepresentable, Hashable, Sendable {
         self.rawValue = rawValue
     }
 
-    /// Sign in with Apple。
+    /// Sign in with Apple, under the identifier the authentication server reports for it.
     public static let apple = AuthProviderID(rawValue: "apple.com")
 
-    /// Google Sign-In。
+    /// Google Sign-In, under the identifier the authentication server reports for it.
     public static let google = AuthProviderID(rawValue: "google.com")
 
-    /// 匿名認証。
+    /// A session with no provider behind it.
+    ///
+    /// Not an identifier any server issues: the exchange recognises this value and opens an
+    /// anonymous session instead of trading a credential.
     public static let anonymous = AuthProviderID(rawValue: "anonymous")
 }
 

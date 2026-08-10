@@ -1,10 +1,10 @@
 import Foundation
 @testable import Authentication
 
-/// テスト用の `Authenticator` モック。
+/// An authenticator the test drives by hand.
 ///
-/// `signIn(with:)` 成功時に `authStateChanges()` ストリームへユーザーを流すことで、
-/// Firebase の `addStateDidChangeListener` と同じ挙動を再現する。
+/// A successful `signIn(with:)` pushes the user into the `authStateChanges()` stream, which
+/// reproduces how Firebase's state-change listener behaves.
 @MainActor
 final class MockAuthenticator: Authenticator {
     var stubbedUser: AuthUser
@@ -49,13 +49,14 @@ final class MockAuthenticator: Authenticator {
 
     nonisolated func authStateChanges() -> AsyncStream<AuthUser?> { stream }
 
-    /// 外部要因（cold start / token refresh / 外部サインアウト）による状態変化を模擬する。
+    /// Emits a state change the app did not ask for: a cold start, a token refresh, or a
+    /// sign-out that happened elsewhere.
     func emit(_ user: AuthUser?) {
         continuation.yield(user)
     }
 }
 
-/// テスト用の `CredentialProvider` モック。
+/// A credential provider that returns a canned result instead of presenting UI.
 final class MockCredentialProvider: CredentialProvider, @unchecked Sendable {
     let providerID: AuthProviderID
     var result: Result<AuthCredential, any Error>
@@ -72,7 +73,7 @@ final class MockCredentialProvider: CredentialProvider, @unchecked Sendable {
     }
 }
 
-/// テスト用の `PostAuthenticationAction` モック。
+/// A post-authentication action that records who it ran for, and can be made to fail.
 final class MockPostAuthenticationAction: PostAuthenticationAction, @unchecked Sendable {
     var error: (any Error)?
     private let lock = NSLock()

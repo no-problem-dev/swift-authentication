@@ -2,17 +2,21 @@ import Foundation
 import Authentication
 
 public extension AuthenticationStore {
-    /// 未認証状態のスタブ。SwiftUI プレビュー用。Firebase 等の SDK 不要で生成できる。
+    /// A store parked in the signed-out state, for previews. Builds without Firebase or any
+    /// other SDK.
     static var previewUnauthenticated: AuthenticationStore {
         AuthenticationStore(authenticator: PreviewStubAuthenticator(initial: nil))
     }
 
-    /// `id: "preview-user"` で認証済み状態のスタブ。SwiftUI プレビュー用。
+    /// A store already signed in as a placeholder user, for previews of screens behind the
+    /// sign-in wall.
     static var previewAuthenticated: AuthenticationStore {
         AuthenticationStore(authenticator: PreviewStubAuthenticator(initial: AuthUser(id: "preview-user")))
     }
 
-    /// 指定ユーザーで認証済み状態のスタブ。SwiftUI プレビュー用。
+    /// A store already signed in as the given user, for previews that show profile details.
+    ///
+    /// - Parameter user: The user the preview should appear to be signed in as.
     static func preview(user: AuthUser) -> AuthenticationStore {
         AuthenticationStore(authenticator: PreviewStubAuthenticator(initial: user))
     }

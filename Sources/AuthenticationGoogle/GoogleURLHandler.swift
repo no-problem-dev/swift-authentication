@@ -1,14 +1,16 @@
 import Foundation
 import GoogleSignIn
 
-/// Google Sign-In のリダイレクト URL を処理するヘルパー。
+/// Hands OAuth redirect URLs back to Google Sign-In.
 ///
-/// アプリの `onOpenURL` / `application(_:open:options:)` から呼ぶ。
+/// Call it from `onOpenURL` or `application(_:open:options:)`. Without it the browser round
+/// trip never completes and sign-in appears to hang with no error.
 public enum GoogleURLHandler {
-    /// `url` を Google Sign-In SDK に転送する。
+    /// Forwards a URL to the Google Sign-In SDK.
     ///
-    /// - Parameter url: アプリが受け取ったリダイレクト URL。
-    /// - Returns: Google Sign-In が処理した場合 `true`、対象外の URL なら `false`。
+    /// - Parameter url: The URL the app was opened with.
+    /// - Returns: `true` when Google Sign-In consumed it. `false` means the URL belongs to
+    ///   something else and the app still has to handle it.
     @discardableResult
     public static func handle(_ url: URL) -> Bool {
         GIDSignIn.sharedInstance.handle(url)

@@ -2,11 +2,13 @@ import Foundation
 import Authentication
 
 public extension AuthCredential {
-    /// Sign in with Apple 用の ``AuthCredential`` を生成するファクトリ。
+    /// Builds a credential from what an Apple authorization returned.
+    ///
     /// - Parameters:
-    ///   - idToken: Apple の identityToken（JWT 文字列）。
-    ///   - rawNonce: リクエストに使った生 nonce（SHA256 前の値）。
-    ///   - fullName: 初回認証時に得られる氏名（任意）。
+    ///   - idToken: The identity token, as the JWT string Apple provided.
+    ///   - rawNonce: The nonce before hashing — not the SHA-256 that went on the request.
+    ///     The server compares it with the token's nonce claim to rule out a replay.
+    ///   - fullName: The name, which Apple returns only on the first authorization.
     static func apple(
         idToken: String,
         rawNonce: String,

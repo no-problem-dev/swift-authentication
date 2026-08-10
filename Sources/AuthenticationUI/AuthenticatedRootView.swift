@@ -1,11 +1,14 @@
 import SwiftUI
 import Authentication
 
-/// 認証状態に基づいてコンテンツを出し分けるルートビュー。
+/// Shows a different subtree for each stage of the session.
 ///
-/// Environment の ``AuthenticationStore`` の `state` を観測し、4 つの状態に対応する
-/// ビューを切り替える。状態管理は `AuthenticationStore`（`@Observable`）が行うため、
-/// 本ビューは宣言的に分岐するだけ。
+/// It reads the store from the environment and switches on its state, holding none of its own.
+/// Checking and pending provisioning share the loading branch, which is why there are four
+/// builders rather than five.
+///
+/// With no store in the environment it renders a configuration error instead of an empty
+/// screen, so a missed injection is visible during development rather than silent.
 public struct AuthenticatedRootView<
     LoadingView: View,
     UnauthenticatedView: View,
@@ -19,11 +22,14 @@ public struct AuthenticatedRootView<
     private let errorView: (any Error) -> ErrorView
     private let authenticatedView: (AuthUser) -> AuthenticatedView
 
+    /// Creates the root view from one builder per stage.
+    ///
     /// - Parameters:
-    ///   - loading: 確認中・プロビジョニング中の表示。
-    ///   - unauthenticated: 未認証時の表示（サインイン画面）。
-    ///   - error: エラー時の表示。
-    ///   - authenticated: 認証完了後の表示（認証済みユーザーを受け取る）。
+    ///   - loading: Shown while the stored session is being checked and while post-sign-in
+    ///     work runs.
+    ///   - unauthenticated: Shown when there is no session — the sign-in screen.
+    ///   - error: Shown when the flow failed, receiving the underlying error.
+    ///   - authenticated: Shown once the user is signed in and provisioned.
     public init(
         @ViewBuilder loading: @escaping () -> LoadingView,
         @ViewBuilder unauthenticated: @escaping () -> UnauthenticatedView,

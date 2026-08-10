@@ -6,7 +6,8 @@ import Authentication
 
 enum MockError: Error { case boom, typeMismatch }
 
-/// `executeWithResponse` のみ実装すれば `execute` 群は既定実装で動く。
+/// Overriding `executeWithResponse` alone is enough: the `execute` family runs on the
+/// protocol's default implementations.
 final class MockAPIExecutable: APIExecutable, @unchecked Sendable {
     var executeCount = 0
     var stubbed: Any?
@@ -55,13 +56,13 @@ struct APIUserProvisioningTests {
         #expect(UserProvisioningContract.resolvePath(with: UserProvisioningContract()) == "/auth/initialize")
     }
 
-    /// 回帰: 応答本文の形をこのパッケージが決め打ちしてはいけない。
+    /// Regression: this package must not dictate the shape of the response body.
     ///
-    /// かつて `Output` は `{ initialized, message }` を必須で要求しており、バックエンドが
-    /// 別の形を返すとデコード失敗 → サインイン自体が通らなくなっていた（1.1.10 で 1.x 系を修正）。
-    /// 既存のテストは `executeWithResponse` を差し替えるモックでデコード経路を迂回していたため
-    /// この欠陥を検知できず、v2.0.0 の再設計で同じ形が復活していた。
-    /// ここでは実デコーダに通し、どんな本文でも成功することを保つ。
+    /// `Output` once required `{ initialized, message }`, so a backend that answered with
+    /// anything else failed to decode and sign-in stopped working outright (fixed for the 1.x
+    /// line in 1.1.10). The tests of the day mocked `executeWithResponse` and so skipped the
+    /// decoding path entirely, which is why the same shape came back during the 2.0.0
+    /// redesign. This one runs a real decoder and holds any body to be acceptable.
     @Test(
         "provisioning output ignores the response body shape",
         arguments: [
@@ -73,7 +74,7 @@ struct APIUserProvisioningTests {
         ]
     )
     func outputIgnoresBodyShape(json: String) throws {
-        // デコードが成功すること自体が主張。形を要求する型に戻すと throw して落ちる。
+        // Decoding succeeding is the assertion. A type that demands a shape throws here.
         _ = try JSONDecoder().decode(
             UserProvisioningContract.Output.self,
             from: Data(json.utf8)

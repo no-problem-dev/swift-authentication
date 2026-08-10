@@ -1,13 +1,12 @@
 import Foundation
 
-/// 認証プロバイダから取得した氏名。
+/// A user's name exactly as the sign-in provider gave it.
 ///
-/// `PersonNameComponents` を vendor 非依存な値として保持する軽量型。
-/// Sign in with Apple では初回認証時のみ取得可能。
+/// A small `Sendable` stand-in for `PersonNameComponents`. Either part can be missing —
+/// providers return whatever the user chose to share — and Sign in with Apple hands the name
+/// over only on the first authorization, so capture it then or lose it.
 public struct PersonName: Hashable, Sendable {
-    /// 名（ファーストネーム）。
     public let givenName: String?
-    /// 姓（ファミリーネーム）。
     public let familyName: String?
 
     public init(givenName: String? = nil, familyName: String? = nil) {
@@ -15,7 +14,12 @@ public struct PersonName: Hashable, Sendable {
         self.familyName = familyName
     }
 
-    /// `PersonNameComponents` から生成する。値が無い場合は `nil` を返す。
+    /// Creates a name from name components, failing when there is nothing worth keeping.
+    ///
+    /// Returns `nil` for absent components and for components where both parts are missing,
+    /// so an empty name never travels on a credential.
+    ///
+    /// - Parameter components: The components a provider returned.
     public init?(components: PersonNameComponents?) {
         guard let components else { return nil }
         guard components.givenName != nil || components.familyName != nil else { return nil }

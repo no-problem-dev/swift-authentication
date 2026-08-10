@@ -9,16 +9,16 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        // コア抽象（vendor 非依存）。画面はこれだけに依存できる。
+        // Core abstractions, free of vendor SDKs. Screens can depend on this alone.
         .library(name: "Authentication", targets: ["Authentication"]),
-        // SwiftUI（システムのみ）。
+        // SwiftUI views, system frameworks only.
         .library(name: "AuthenticationUI", targets: ["AuthenticationUI"]),
-        // 資格情報の取得（具象）。
+        // Credential acquisition.
         .library(name: "AuthenticationApple", targets: ["AuthenticationApple"]),
         .library(name: "AuthenticationGoogle", targets: ["AuthenticationGoogle"]),
-        // セッション交換（具象）。
+        // Session exchange.
         .library(name: "AuthenticationFirebase", targets: ["AuthenticationFirebase"]),
-        // ログイン後処理（具象・REST）。
+        // Post-authentication work, over REST.
         .library(name: "AuthenticationAPI", targets: ["AuthenticationAPI"])
     ],
     dependencies: [
@@ -66,8 +66,8 @@ let package = Package(
                 .product(name: "FirebaseCore", package: "firebase-ios-sdk")
             ],
             path: "Sources/AuthenticationFirebase",
-            // プライバシーマニフェスト。UserDefaults を触るのはこのターゲットだけなので、
-            // ここにだけ置く。`.copy` で中身を変えずにリソースバンドルへ入れる。
+            // The privacy manifest lives here alone, because this is the only target that
+            // touches user defaults. `.copy` puts it in the bundle verbatim.
             resources: [.copy("PrivacyInfo.xcprivacy")]
         ),
 

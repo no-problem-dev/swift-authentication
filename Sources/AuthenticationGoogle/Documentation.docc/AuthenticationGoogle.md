@@ -1,45 +1,40 @@
 # ``AuthenticationGoogle``
 
-Google Sign-In の資格情報取得と URL ハンドリングを担う ``Authentication/CredentialProvider`` 実装。
+Google Sign-In, as a `CredentialProvider`, plus the redirect handling it needs.
 
 ## Overview
 
-`AuthenticationGoogle` は GoogleSignIn SDK を用いてサインインフローを起動し、
-ID トークンとアクセストークンを取得して vendor 非依存な ``Authentication/AuthCredential`` を生成する。
-`clientID` は合成ルートから注入する（FirebaseCore に直接依存せず取得するため、
-`AuthenticationFirebase` の `FirebaseConfigurator.googleClientID` を使うのが標準パターン）。
+`AuthenticationGoogle` drives the GoogleSignIn SDK, collects the identity and access tokens,
+and returns them as a vendor-agnostic `AuthCredential`.
+
+The client ID is injected rather than read from Firebase, which is what keeps this module clear
+of FirebaseCore. Apps that already use Firebase can take it from
+`FirebaseConfigurator.googleClientID`; otherwise it comes from the app's `Info.plist`.
 
 ```swift
-import Authentication
 import AuthenticationGoogle
-import AuthenticationFirebase
 
-// 合成ルートでの組み立て例
-// "YOUR_GOOGLE_CLIENT_ID" はダミー — 実際には GoogleService-Info.plist の値を使用
-let clientID = FirebaseConfigurator.googleClientID ?? "YOUR_GOOGLE_CLIENT_ID"
-let store = AuthenticationStore(
-    authenticator: FirebaseAuthenticator(),
-    credentialProviders: [
-        GoogleCredentialProvider(clientID: clientID)
-    ]
-)
+let google = GoogleCredentialProvider(clientID: myGoogleClientID)
 ```
 
-Google Sign-In はリダイレクト URL を受け取る必要がある。
-アプリの `onOpenURL` で ``GoogleURLHandler/handle(_:)`` を呼ぶ。
+Google Sign-In finishes through a redirect back into the app, so the URL has to be forwarded.
+Without this the browser round trip never completes and sign-in appears to hang with no error.
 
 ```swift
-.onOpenURL { url in
-    GoogleURLHandler.handle(url)
+.onOpenURL { incoming in
+    GoogleURLHandler.handle(incoming)
 }
 ```
 
+``GoogleURLHandler/handle(_:)`` reports whether Google consumed the URL, so an app that also
+handles deep links can fall through to its own routing when it did not.
+
 ## Topics
 
-### 資格情報プロバイダ
+### Credential provider
 
 - ``GoogleCredentialProvider``
 
-### URL ハンドリング
+### Redirect handling
 
 - ``GoogleURLHandler``

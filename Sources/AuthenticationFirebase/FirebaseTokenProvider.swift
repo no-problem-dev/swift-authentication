@@ -2,10 +2,10 @@ import Foundation
 @preconcurrency import FirebaseAuth
 import Authentication
 
-/// Firebase ID トークンを供給する ``AuthTokenProviding`` 実装。
+/// Supplies Firebase identity tokens to anything that needs a bearer token.
 ///
-/// REST クライアントへ注入するには、`AuthenticationAPI` の `APITokenProviderAdapter`
-/// で包む。
+/// Wrap it in `APITokenProviderAdapter` from `AuthenticationAPI` before handing it to a REST
+/// client, which is what keeps that client free of any Firebase import.
 public final class FirebaseTokenProvider: AuthTokenProviding, @unchecked Sendable {
     private let auth: Auth
 
@@ -13,11 +13,12 @@ public final class FirebaseTokenProvider: AuthTokenProviding, @unchecked Sendabl
         self.auth = auth
     }
 
-    /// 現在の Firebase ID トークンを返す。
+    /// Returns a valid identity token, letting Firebase refresh it when the cached one has
+    /// expired.
     ///
-    /// - Returns: 未認証なら `nil`。
-    /// - Throws: トークンの取得・リフレッシュに失敗した場合は Firebase のエラーを
-    ///   そのまま伝播する（握りつぶして `nil` にはしない）。
+    /// - Returns: The token, or `nil` when nobody is signed in.
+    /// - Throws: Firebase's error, propagated unchanged. A failed refresh is never turned into
+    ///   `nil`, because that would send an unauthenticated request and hide the real cause.
     public func token() async throws -> String? {
         guard let user = auth.currentUser else { return nil }
         return try await user.getIDToken()

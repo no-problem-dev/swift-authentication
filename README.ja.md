@@ -38,19 +38,6 @@ vendor 非依存なコア抽象に、Firebase / Apple / Google / REST の具象�
 画面はこの 2 つだけに依存できるため、SwiftUI プレビューで Firebase / GoogleSignIn を
 読み込まない。具象（Firebase 等）は合成ルートでのみ import する。
 
-## インストール
-
-```swift
-dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "5.0.0")
-]
-```
-
-利用側ターゲットでは必要な product だけを依存に追加する。
-
-- 画面モジュール → `AuthenticationUI`（+ `Authentication`）
-- 合成ルート（App 本体）→ `AuthenticationFirebase` / `AuthenticationApple` / `AuthenticationGoogle` / `AuthenticationAPI`
-
 ## 使い方
 
 ### 1. 合成ルートで `AuthenticationStore` を組み立てる
@@ -64,7 +51,6 @@ import AuthenticationApple
 import AuthenticationGoogle
 import AuthenticationAPI
 import APIClient
-import FirebaseCore
 
 @main
 struct MyApp: App {
@@ -73,20 +59,17 @@ struct MyApp: App {
     init() {
         FirebaseConfigurator.configure()   // 本番。エミュレータは .configure(environment: .emulator())
 
-        let tokenProvider = FirebaseTokenProvider()
         let apiClient = APIClient(
             baseURL: URL(string: "https://api.example.com")!,
-            authTokenProvider: APITokenProviderAdapter(tokenProvider)
+            authTokenProvider: APITokenProviderAdapter(FirebaseTokenProvider())
         )
-
-        let clientID = FirebaseConfigurator.googleClientID ?? ""
 
         _store = State(initialValue: AuthenticationStore(
             authenticator: FirebaseAuthenticator(),
-            postAuthentication: APIUserProvisioning(apiClient: apiClient, path: "/auth/initialize"),
+            postAuthentication: APIUserProvisioning(apiClient: apiClient),
             credentialProviders: [
                 AppleCredentialProvider(),
-                GoogleCredentialProvider(clientID: clientID)
+                GoogleCredentialProvider(clientID: FirebaseConfigurator.googleClientID ?? "")
             ]
         ))
     }
@@ -124,8 +107,8 @@ struct MainView: View {
 
     var body: some View {
         VStack {
-            Text("ようこそ \(userID)")
-            Button("サインアウト") { Task { try? await store?.signOut() } }
+            Text("Welcome, \(userID)")
+            Button("Sign Out") { Task { try? await store?.signOut() } }
         }
     }
 }
@@ -139,26 +122,52 @@ struct MainView: View {
 
 ### 状態
 
-`AuthenticationState`:
+`AuthenticationState` の遷移:
 
-- `.checking` — 確認中
-- `.unauthenticated` — 未認証
+- `.checking` — 起動時に保存済みセッションを確認中
+- `.unauthenticated` — セッションなし
 - `.authenticatedPendingProvisioning` — 交換済み・ログイン後処理待ち
 - `.authenticated(AuthUser)` — 完全に認証済み
 - `.error(any Error)` — エラー
 
-## バックエンド API（任意）
+アカウントが使えるのは `.authenticated` だけ。プロビジョニング待ちの間はセッションこそ
+あるが、画面はローディングのままにする。
 
-`APIUserProvisioning` を使う場合、`POST <path>`（既定 `/auth/initialize`）を用意する。
-Firebase ID トークンが `Authorization: Bearer` で自動付与される。プロビジョニングは
-認証セッション中に **1 回だけ** 呼ばれるが、サーバ側でも冪等にすること。
-プロビジョニング不要なら `postAuthentication` を省略（`NoPostAuthentication`）できる。
+### ログイン後処理（任意）
 
-## 独自プロバイダ
+`APIUserProvisioning` はセッション成立後に `POST <path>`（既定 `/auth/initialize`）を呼ぶ。
+Firebase ID トークンが `Authorization: Bearer` で自動付与される。ストアは
+**認証セッション中に 1 回だけ** 呼ぶが、再試行や再インストールでサーバは複数回受け取るため、
+エンドポイント側も冪等にすること。プロビジョニング不要なら `postAuthentication` を省略できる。
+
+### 独自プロバイダ
 
 `AuthProviderID` は拡張可能で、`CredentialProvider` / `Authenticator` /
 `PostAuthenticationAction` を実装すれば任意のバックエンド（Firestore 直叩き、独自 OIDC 等）を
 差し込める。
+
+## ドキュメント
+
+全モジュールの API リファレンス: [no-problem-dev.github.io/swift-authentication](https://no-problem-dev.github.io/swift-authentication/documentation/)。
+
+## インストール
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "5.0.0")
+]
+```
+
+利用側ターゲットでは必要な product だけを依存に追加する。
+
+- 画面モジュール → `AuthenticationUI`（+ `Authentication`）
+- 合成ルート（App 本体）→ `AuthenticationFirebase` / `AuthenticationApple` / `AuthenticationGoogle` / `AuthenticationAPI`
+
+## 動作環境
+
+| Swift | プラットフォーム |
+|---|---|
+| 6.2 | iOS 17+ · macOS 14+ |
 
 ## ライセンス
 

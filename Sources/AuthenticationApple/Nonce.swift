@@ -1,9 +1,12 @@
 import Foundation
 import CryptoKit
 
-/// Sign in with Apple のリプレイ攻撃対策に使う nonce ユーティリティ。
+/// Makes and hashes the nonce that ties an Apple identity token to a single sign-in attempt.
 enum Nonce {
-    /// ランダムな生 nonce を生成する。
+    /// Returns a fresh nonce drawn from the system's cryptographic random source.
+    ///
+    /// Never reuse one across attempts: single use is the whole reason a captured identity
+    /// token cannot be replayed.
     static func randomNonceString(length: Int = 32) -> String {
         precondition(length > 0)
         let charset: [Character] =
@@ -26,7 +29,8 @@ enum Nonce {
         return result
     }
 
-    /// 生 nonce の SHA256 16 進文字列を返す（リクエストの `nonce` に設定する値）。
+    /// Returns the hex-encoded SHA-256 of a nonce, which is the value that goes on the
+    /// authorization request. The raw nonce stays local until it travels on the credential.
     static func sha256(_ input: String) -> String {
         let hashed = SHA256.hash(data: Data(input.utf8))
         return hashed.map { String(format: "%02x", $0) }.joined()

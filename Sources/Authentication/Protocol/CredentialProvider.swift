@@ -1,14 +1,20 @@
 import Foundation
 
-/// 資格情報の取得（取得層）。
+/// The acquisition layer: runs a provider's interactive sign-in and returns a neutral credential.
 ///
-/// Apple / Google などのインタラクティブな UI フローを起動し、
-/// vendor 非依存な ``AuthCredential`` を生成する責務を持つ。
-/// 具象は `AuthenticationApple` / `AuthenticationGoogle` ターゲットで実装。
+/// Conformances present system UI — the Apple authorization sheet, the Google consent
+/// screen — so a call lasts as long as the user takes and can end in cancellation.
+/// `AuthenticationApple` and `AuthenticationGoogle` supply the conformances that ship here.
 public protocol CredentialProvider: Sendable {
-    /// このプロバイダが扱うプロバイダ識別子。
+    /// The provider this instance handles.
+    ///
+    /// ``AuthenticationStore`` keys its registry on the value, so two providers reporting the
+    /// same identifier collapse into one.
     var providerID: AuthProviderID { get }
 
-    /// 資格情報を取得する。ユーザーがキャンセルした場合は ``AuthError/cancelled`` を投げる。
+    /// Presents the provider's sign-in UI and returns the credential it produced.
+    ///
+    /// - Throws: ``AuthError/cancelled`` when the user dismisses the sheet, which is an
+    ///   ordinary outcome and not something to surface as an error.
     func acquireCredential() async throws -> AuthCredential
 }

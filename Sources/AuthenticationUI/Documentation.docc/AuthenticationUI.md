@@ -1,61 +1,66 @@
 # ``AuthenticationUI``
 
-認証状態に応じて画面を切り替える SwiftUI コンポーネント集。
+SwiftUI components that follow the session: a root view that branches on it, and the two
+sign-in buttons.
 
 ## Overview
 
-`AuthenticationUI` は `Authentication` モジュールの ``AuthenticationStore`` を
-SwiftUI の Environment 経由で受け取り、認証状態に応じた UI を宣言的に構築するためのコンポーネントを提供する。
-サードパーティ SDK への依存はなく、システムフレームワーク（SwiftUI・AuthenticationServices）のみを使用する。
+`AuthenticationUI` reads the `AuthenticationStore` out of the SwiftUI environment and builds UI
+from it declaratively. It depends on no third-party SDK — only SwiftUI and
+AuthenticationServices — so screens built on it still render in previews.
 
-アプリのルートビューに ``AuthenticatedRootView`` を配置し、`.authenticationStore(_:)` モディファイアで
-合成ルートから ``AuthenticationStore`` を注入するのが基本パターン。
+``AuthenticatedRootView`` takes one builder per stage of the session. Checking and pending
+provisioning share the loading branch, which is why there are four rather than five.
 
 ```swift
-import SwiftUI
-import Authentication
-import AuthenticationUI
-
-@main
-struct MyApp: App {
-    // ダミー: 実際には AuthenticationFirebase 等の具象を渡す
-    let store = AuthenticationStore(authenticator: myAuthenticator)
-
-    var body: some Scene {
-        WindowGroup {
-            AuthenticatedRootView(
-                loading: { ProgressView() },
-                unauthenticated: {
-                    VStack(spacing: 16) {
-                        AppleSignInButton()
-                        GoogleSignInButton(title: "Google でログイン")
-                    }
-                    .padding(.horizontal, 32)
-                },
-                error: { error in
-                    Text("エラー: \(error.localizedDescription)")
-                },
-                authenticated: { user in
-                    HomeView(user: user)
-                }
-            )
-            .authenticationStore(store)
-        }
+struct RootView: View {
+    var body: some View {
+        AuthenticatedRootView(
+            loading: { SplashScreen() },
+            unauthenticated: { SignInScreen() },
+            error: { ErrorScreen(error: $0) },
+            authenticated: { HomeScreen(user: $0) }
+        )
     }
 }
 ```
 
-``AppleSignInButton`` と ``GoogleSignInButton`` は Environment から ``AuthenticationStore`` を
-読み取り、タップ時に対応する `signIn(using:)` を自動で呼び出す。
-エラーハンドリングは `onError` クロージャで受け取れる（ユーザーキャンセルは自動的に無視される）。
+The store is injected once, at the composition root. Without it the root view renders a
+configuration error rather than an empty screen, so a missed injection is visible immediately.
+
+```swift
+RootView()
+    .authenticationStore(myStore)
+```
+
+``AppleSignInButton`` and ``GoogleSignInButton`` read the same store and call `signIn(using:)`
+on tap. Failures arrive in `onError`; a cancelled sheet does not, because dismissing the
+provider's UI is an ordinary outcome rather than an error worth showing.
+
+```swift
+AppleSignInButton(type: .continue, onError: { presentedError = $0 })
+```
+
+Both buttons also have a form that runs a closure instead of touching the store — for apps that
+own their own session, such as linking an anonymous account, and still want the treatment Apple
+and Google require.
+
+```swift
+GoogleSignInButton(title: "Continue with Google") {
+    await session.linkGoogleAccount()
+}
+```
+
+Match the Apple button's wording to whatever stands beside it: `.signIn`, `.continue` and
+`.signUp` exist so a row of buttons reads as one choice rather than several.
 
 ## Topics
 
-### ルートビュー
+### Root view
 
 - ``AuthenticatedRootView``
 
-### サインインボタン
+### Sign-in buttons
 
 - ``AppleSignInButton``
 - ``GoogleSignInButton``

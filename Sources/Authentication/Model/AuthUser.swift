@@ -1,21 +1,31 @@
 import Foundation
 
-/// 認証済みユーザーを表す vendor 非依存な値型。
+/// The signed-in user, reduced to what the authentication layer can vouch for.
 ///
-/// Firebase の `User` 型を漏らさないため、必要最小限の属性のみを保持する。
-/// 詳細なプロフィールはバックエンド API 等から別途取得する設計。
+/// Deliberately small, so that a provider's own user type never reaches views or use cases.
+/// Anything richer — avatars, roles, preferences — belongs to your backend and is fetched
+/// separately.
 public struct AuthUser: Identifiable, Sendable, Equatable {
-    /// プロバイダ非依存の一意な ID（Firebase の uid など）。
+    /// The stable, provider-independent user ID, suitable as the foreign key in your backend.
+    ///
+    /// It survives token refreshes and sign-outs, but a fresh anonymous session gets a new
+    /// one, so it is an account identifier and never a device identifier.
     public let id: String
 
-    /// メールアドレス。匿名認証など未取得の場合は `nil`。
+    /// The email address, or `nil` for anonymous sessions and providers that returned none.
     public let email: String?
-    /// 表示名。プロバイダから提供されない場合は `nil`。
+    /// The display name, or `nil` when the provider did not supply one.
+    ///
+    /// Often `nil` for Apple, which hands the name over only on the first authorization.
     public let displayName: String?
-    /// 匿名認証ユーザーなら `true`。
+    /// Whether the session has no provider linked to it.
+    ///
+    /// An anonymous account is only as durable as the credentials stored on the device, so
+    /// prompt for a real provider before anything worth keeping accumulates under it.
     public let isAnonymous: Bool
 
-    /// このユーザーが連携しているプロバイダ一覧。
+    /// Every provider linked to the account. Empty while anonymous, and it grows when a
+    /// second provider is linked to the same account.
     public let providerIDs: [AuthProviderID]
 
     public init(

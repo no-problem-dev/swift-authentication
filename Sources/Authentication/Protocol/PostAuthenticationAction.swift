@@ -1,30 +1,36 @@
 import Foundation
 
-/// ログイン後処理（post-auth 層）。
+/// Work that has to finish after sign-in before the user may enter the app.
 ///
-/// 認証サーバへのログインが完了した後に実行する処理（ユーザーの初期化・
-/// プロビジョニングなど）を表すドメイン概念。具象は別ターゲット
-/// （例: `AuthenticationAPI` の `APIUserProvisioning`）で差し込む。
+/// Usually provisioning: creating the user's record in your backend, seeding defaults,
+/// claiming an invitation. `AuthenticationAPI` ships one conformance that posts to a REST
+/// endpoint; anything else plugs in the same way.
 ///
-/// - Important: ``AuthenticationStore`` は認証セッション中に同一ユーザーへ
-///   一度だけ ``perform(for:)`` を呼ぶが、ネットワーク再試行やプロセス
-///   再起動に備え、サーバ側でも冪等であることを前提とする。
+/// - Important: ``AuthenticationStore`` calls ``perform(for:)`` once per user per session,
+///   but retries and relaunches mean the server sees it more than once. The work on the
+///   server side has to be idempotent.
 public protocol PostAuthenticationAction: Sendable {
-    /// ログイン後処理を実行する。
+    /// Runs the post-sign-in work for a user.
     ///
-    /// - Parameter user: 認証済みユーザー。
-    /// - Throws: 処理が失敗した場合はエラーを投げる。``AuthenticationStore`` は
-    ///   このエラーを ``AuthError/postAuthenticationFailed(_:)`` でラップする。
+    /// - Parameter user: The user whose session was just established.
+    /// - Throws: Anything the work raised. ``AuthenticationStore`` wraps it in
+    ///   ``AuthError/postAuthenticationFailed(_:)`` and leaves the session signed in, so a
+    ///   failure here strands the user between states until a later attempt succeeds.
     func perform(for user: AuthUser) async throws
 }
 
-/// 何もしないログイン後処理。プロビジョニング不要なアプリ向けの既定値。
+/// A post-authentication action that does nothing.
+///
+/// The store's default, for apps with no provisioning step.
 public struct NoPostAuthentication: PostAuthenticationAction {
     public init() {}
     public func perform(for user: AuthUser) async throws {}
 }
 
-/// 複数のログイン後処理を順次実行する合成アクション。
+/// Runs several post-authentication actions in order, stopping at the first that throws.
+///
+/// Earlier actions are not undone when a later one fails, so order them from least to most
+/// disposable.
 public struct CompositePostAuthentication: PostAuthenticationAction {
     private let actions: [any PostAuthenticationAction]
 

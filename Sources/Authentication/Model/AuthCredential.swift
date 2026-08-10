@@ -1,27 +1,38 @@
 import Foundation
 
-/// 認証サーバへ渡す資格情報。
+/// Proof of identity that the authentication server trades for a session.
 ///
-/// プロバイダ固有の SDK 型（Firebase の `AuthCredential` など）に依存しない
-/// 中立な値型。`CredentialProvider` が生成し、`Authenticator` が
-/// 認証サーバとのセッション交換に使用する。
+/// A neutral value that never mentions a provider SDK type, such as Firebase's own
+/// credential type. A ``CredentialProvider`` produces one, an ``Authenticator`` spends it.
 ///
-/// 生成は各プロバイダ用ターゲットの便宜ファクトリ（例: `AuthCredential.apple(...)`）
-/// を使うことを想定。
+/// Build one through the factory that ships with the provider's target — for example
+/// `AuthCredential.apple(idToken:rawNonce:fullName:)` — rather than by hand, since each
+/// provider populates a different subset of the fields below.
+///
+/// - Warning: The token fields are bearer secrets for as long as they are valid. Do not log
+///   an instance of this type or write it to disk.
 public struct AuthCredential: Sendable, Equatable {
-    /// この資格情報が属するプロバイダ。
+    /// The provider this credential came from, which decides how it is exchanged and which
+    /// of the fields below are populated.
     public let provider: AuthProviderID
 
-    /// OIDC ID トークン（Apple / Google）。匿名認証では `nil`。
+    /// The OIDC identity token issued by Apple or Google; `nil` for anonymous sign-in.
     public let idToken: String?
 
-    /// アクセストークン（Google が供給）。Apple では `nil`。
+    /// The OAuth access token, which only Google supplies; `nil` for Apple and anonymous.
     public let accessToken: String?
 
-    /// リプレイ攻撃対策の生 nonce（Apple フロー）。Google では `nil`。
+    /// The unhashed nonce that was sent, in SHA-256 form, with the Apple authorization request.
+    ///
+    /// The server matches it against the nonce claim inside the identity token, which is what
+    /// makes a captured token useless in a replay. Put the raw value here, never the hash.
+    /// `nil` outside the Apple flow.
     public let rawNonce: String?
 
-    /// 氏名（Apple 初回認証時のみ）。
+    /// The user's name, which Apple returns only on the first authorization.
+    ///
+    /// Persist it during that first sign-in. Every later sign-in with the same Apple ID
+    /// leaves it `nil`, and there is no way to ask for it again.
     public let fullName: PersonName?
 
     public init(
@@ -38,6 +49,6 @@ public struct AuthCredential: Sendable, Equatable {
         self.fullName = fullName
     }
 
-    /// 匿名認証用の資格情報。
+    /// A credential that asks for an anonymous session and carries no tokens.
     public static let anonymous = AuthCredential(provider: .anonymous)
 }

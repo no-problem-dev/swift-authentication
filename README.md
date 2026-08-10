@@ -36,19 +36,6 @@ Authentication is split into three responsibilities, each defined as a vendor-ag
 Views can depend on only these two, keeping SwiftUI Previews free of Firebase / GoogleSignIn.
 Concrete implementations (Firebase, etc.) are imported only at the composition root.
 
-## Installation
-
-```swift
-dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "5.0.1")
-]
-```
-
-Add only the products your target needs:
-
-- Screen modules → `AuthenticationUI` (+ `Authentication`)
-- Composition root (App target) → `AuthenticationFirebase` / `AuthenticationApple` / `AuthenticationGoogle` / `AuthenticationAPI`
-
 ## Usage
 
 ### 1. Compose `AuthenticationStore` at the composition root
@@ -62,7 +49,6 @@ import AuthenticationApple
 import AuthenticationGoogle
 import AuthenticationAPI
 import APIClient
-import FirebaseCore
 
 @main
 struct MyApp: App {
@@ -71,20 +57,17 @@ struct MyApp: App {
     init() {
         FirebaseConfigurator.configure()   // Production. Use .configure(environment: .emulator()) for local dev.
 
-        let tokenProvider = FirebaseTokenProvider()
         let apiClient = APIClient(
             baseURL: URL(string: "https://api.example.com")!,
-            authTokenProvider: APITokenProviderAdapter(tokenProvider)
+            authTokenProvider: APITokenProviderAdapter(FirebaseTokenProvider())
         )
-
-        let clientID = FirebaseConfigurator.googleClientID ?? ""
 
         _store = State(initialValue: AuthenticationStore(
             authenticator: FirebaseAuthenticator(),
-            postAuthentication: APIUserProvisioning(apiClient: apiClient, path: "/auth/initialize"),
+            postAuthentication: APIUserProvisioning(apiClient: apiClient),
             credentialProviders: [
                 AppleCredentialProvider(),
-                GoogleCredentialProvider(clientID: clientID)
+                GoogleCredentialProvider(clientID: FirebaseConfigurator.googleClientID ?? "")
             ]
         ))
     }
@@ -145,17 +128,38 @@ struct MainView: View {
 - `.authenticated(AuthUser)` — fully authenticated
 - `.error(any Error)` — an error occurred
 
-## Backend API (optional)
+Only `.authenticated` means the account is ready: while provisioning is pending the session exists but the app should still show a loading state.
 
-When using `APIUserProvisioning`, provide a `POST <path>` endpoint (default `/auth/initialize`).
-The Firebase ID token is automatically attached as `Authorization: Bearer`.
-The store calls provisioning **once per authentication session**, but the server endpoint should also be idempotent.
-If provisioning is not required, omit `postAuthentication` (defaults to `NoPostAuthentication`).
+### Post-authentication provisioning (optional)
 
-## Custom Providers
+`APIUserProvisioning` calls `POST <path>` (default `/auth/initialize`) once the session exists, with the Firebase ID token attached as `Authorization: Bearer`. The store calls it **once per authentication session**, but retries and reinstalls mean the endpoint has to be idempotent on the server too. Omit `postAuthentication` when there is nothing to provision.
 
-`AuthProviderID` is open-ended. Implement `CredentialProvider` / `Authenticator` /
-`PostAuthenticationAction` to plug in any backend — direct Firestore access, custom OIDC, etc.
+### Custom providers
+
+`AuthProviderID` is open-ended. Implement `CredentialProvider` / `Authenticator` / `PostAuthenticationAction` to plug in any backend — direct Firestore access, custom OIDC, anything else.
+
+## Documentation
+
+API reference for every module: [no-problem-dev.github.io/swift-authentication](https://no-problem-dev.github.io/swift-authentication/documentation/).
+
+## Installation
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "5.0.0")
+]
+```
+
+Add only the products your target needs:
+
+- Screen modules → `AuthenticationUI` (+ `Authentication`)
+- Composition root (App target) → `AuthenticationFirebase` / `AuthenticationApple` / `AuthenticationGoogle` / `AuthenticationAPI`
+
+## Requirements
+
+| Swift | Platforms |
+|---|---|
+| 6.2 | iOS 17+ · macOS 14+ |
 
 ## License
 

@@ -1,21 +1,21 @@
 import SwiftUI
 import Authentication
 
-/// Google Sign-In ボタン。
+/// A Google Sign-In button that follows Google's branding rules.
 ///
-/// Google のブランドガイドラインに沿った意匠（公式ロゴ・白地・アウトライン）を持つ。
-/// ロゴはこのターゲットのリソースにある本物で、`g.circle` のような似た記号で代用しない。
+/// The mark is the real logo, shipped as a resource of this target — a lookalike such as the
+/// `g.circle` symbol is not an acceptable substitute. On tap it offers the same two forms as
+/// ``AppleSignInButton``:
 ///
-/// 押した後に何をするかは 2 通り（``AppleSignInButton`` と同じ形にしてある）:
-///
-/// - `init(title:onError:)` — `authenticationStore.signIn(using: .google)` を実行する。
-/// - `init(title:perform:)` — 渡された処理を実行する。**セッションを自前で持つアプリ向け。**
+/// - `init(title:onError:)` — signs in through the store in the environment.
+/// - `init(title:perform:)` — runs what you pass instead. **For apps that own their own
+///   session**, which borrow the treatment without copying it.
 public struct GoogleSignInButton: View {
     @Environment(\.authenticationStore) private var store
     @State private var isLoading = false
 
     private let title: String
-    /// 押されたときに走らせるもの。nil のときだけ `authenticationStore` を使う。
+    /// What to run on tap. Only when this is `nil` does the button reach for the store.
     private let action: (@MainActor () async -> Void)?
     private let onError: (@MainActor (any Error) -> Void)?
 
@@ -28,7 +28,7 @@ public struct GoogleSignInButton: View {
         self.onError = onError
     }
 
-    /// 押されたら `action` を実行する。ストアには触らない。
+    /// Creates a button that runs your action on tap, leaving the store untouched.
     public init(
         title: String = "Google でログイン",
         perform action: @escaping @MainActor () async -> Void
@@ -61,7 +61,8 @@ public struct GoogleSignInButton: View {
         .disabled(isDisabled)
     }
 
-    /// ストアを使う形のときだけ、ストアの不在で押せなくする。
+    /// Disabled while a sign-in is running, and — in the store-backed form only — when no
+    /// store was injected.
     private var isDisabled: Bool {
         isLoading || (action == nil && store == nil)
     }
@@ -83,17 +84,17 @@ public struct GoogleSignInButton: View {
         do {
             try await store.signIn(using: .google)
         } catch let error as AuthError where error.code == .cancelled {
-            // ユーザーキャンセルは無視
+            // A dismissed consent screen is a normal outcome, not something to report.
         } catch {
             onError?(error)
         }
     }
 }
 
-/// Google Sign-In ボタン用の ButtonStyle。
+/// The outlined style used by the Google button, exposed for buttons you build yourself.
 ///
-/// `AppleSignInButton` のスタイルと視覚的に一貫したアウトライン表示を提供する。
-/// カスタムの Google Sign-In ボタンを実装する場合にも利用できる。
+/// It carries the corner radius, border and press feedback that keep a custom Google button
+/// visually consistent with ``AppleSignInButton`` when the two are stacked.
 public struct GoogleSignInButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 

@@ -3,7 +3,7 @@ import Foundation
 import Authentication
 @testable import AuthenticationAPI
 
-/// テスト用の `AuthTokenProviding` モック。
+/// A token provider whose result the test decides up front.
 private final class MockTokenProviding: AuthTokenProviding, @unchecked Sendable {
     var result: Result<String?, any Error>
 

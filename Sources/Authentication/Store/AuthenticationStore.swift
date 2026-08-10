@@ -1,37 +1,40 @@
 import Foundation
 import Observation
 
-/// View が依存する認証セッションのステートホルダ。
+/// Owns the authentication session and publishes the state that views render from.
 ///
-/// 取得（``CredentialProvider``）→ 交換（``Authenticator``）→ ログイン後処理
-/// （``PostAuthenticationAction``）を束ね、`@Observable` な ``state`` を公開する。
+/// It threads the three layers together — acquisition (``CredentialProvider``), exchange
+/// (``Authenticator``), post-authentication work (``PostAuthenticationAction``) — and exposes
+/// the result as an observable ``state``.
 ///
-/// - 依存は init で注入され、具象（`FirebaseAuthenticator` など）はここで刺さる。
-///   本型自体は vendor 非依存なので、SwiftUI プレビューやテストでは
-///   スタブ/モックを注入して SDK 無しで生成できる。
-/// - ``state`` と post-auth の冪等性は本型が単一の所有者。認証状態の変化は
-///   ``Authenticator/authStateChanges()`` を MainActor 上で逐次購読して反映し、
-///   プロビジョニングは認証セッション中に同一ユーザーへ一度だけ実行する。
+/// - Dependencies arrive through `init`, which is the only place a provider SDK enters the
+///   picture. This type imports none of them, so previews and tests build one from stubs.
+/// - It is the single owner of ``state`` and of the guarantee that provisioning runs once per
+///   user per session. Auth-state changes are consumed serially on the main actor, so a
+///   provider that reports the same user repeatedly still provisions once.
 @MainActor
 @Observable
 public final class AuthenticationStore {
-    /// View が観測する認証状態。
+    /// The current stage of the session, starting at checking until the authenticator reports
+    /// what it found. Reading it from a view sets up the observation that redraws on change.
     public private(set) var state: AuthenticationState = .checking
 
     @ObservationIgnored private let authenticator: any Authenticator
     @ObservationIgnored private let postAuthentication: any PostAuthenticationAction
     @ObservationIgnored private let credentialProviders: [AuthProviderID: any CredentialProvider]
 
-    /// プロビジョニング済みユーザーの ID。同一セッションでの重複実行を防ぐ。
+    /// The user whose post-authentication work has been claimed, so a repeated emission does
+    /// not run it twice. Cleared on sign-out and on failure, which is what allows a retry.
     @ObservationIgnored private var provisionedUserID: String?
     @ObservationIgnored private var observationTask: Task<Void, Never>?
 
-    /// 認証セッションを組み立てる。
+    /// Assembles a session from its three layers and starts observing straight away.
     ///
     /// - Parameters:
-    ///   - authenticator: セッション交換を担う実装（例: `FirebaseAuthenticator`）。
-    ///   - postAuthentication: ログイン後処理（省略時は `NoPostAuthentication`）。
-    ///   - credentialProviders: 利用するプロバイダ一覧。同じ `providerID` が複数ある場合は後勝ち。
+    ///   - authenticator: The exchange layer, for example `FirebaseAuthenticator`.
+    ///   - postAuthentication: Work to run after sign-in. Defaults to doing nothing.
+    ///   - credentialProviders: The providers sign-in may be requested for. When two report
+    ///     the same identifier the last one wins.
     public init(
         authenticator: any Authenticator,
         postAuthentication: any PostAuthenticationAction = NoPostAuthentication(),
@@ -46,7 +49,10 @@ public final class AuthenticationStore {
         startObservingAuthState()
     }
 
-    /// 状態観測を停止する（任意。通常は不要だが明示的に破棄したい場合に使用）。
+    /// Stops consuming auth-state changes.
+    ///
+    /// Rarely needed, since the observation dies with the store. Call it when a store must be
+    /// torn down deterministically: afterwards ``state`` is frozen and cannot be resumed.
     public func stopObserving() {
         observationTask?.cancel()
         observationTask = nil
@@ -54,7 +60,12 @@ public final class AuthenticationStore {
 
     // MARK: - Sign in
 
-    /// 登録済みの ``CredentialProvider`` で資格情報を取得し、サインインする。
+    /// Runs a registered provider's sign-in UI and exchanges what it returns.
+    ///
+    /// - Parameter providerID: Which registered provider to use.
+    /// - Throws: ``AuthError/unsupportedProvider(_:)`` when nothing was registered for that
+    ///   identifier, ``AuthError/cancelled`` when the user backs out, and
+    ///   ``AuthError/credentialAcquisitionFailed(_:)`` for anything else the provider raised.
     public func signIn(using providerID: AuthProviderID) async throws {
         guard let provider = credentialProviders[providerID] else {
             throw AuthError.unsupportedProvider(providerID)
@@ -63,10 +74,14 @@ public final class AuthenticationStore {
         try await signIn(with: credential)
     }
 
-    /// 取得済みの資格情報でサインインする。
+    /// Exchanges a credential you already hold for a session.
     ///
-    /// 成功すると ``Authenticator/authStateChanges()`` が新しいユーザーを流し、
-    /// 本型がプロビジョニングと ``state`` 更新を行う。
+    /// The exchanged user is discarded on purpose. Success makes
+    /// ``Authenticator/authStateChanges()`` emit, and that path — not this one — provisions
+    /// the user and advances ``state``. On failure ``state`` becomes an error before throwing.
+    ///
+    /// - Parameter credential: A credential from a provider, or ``AuthCredential/anonymous``.
+    /// - Throws: ``AuthError/sessionExchangeFailed(_:)``.
     public func signIn(with credential: AuthCredential) async throws {
         do {
             _ = try await authenticator.signIn(with: credential)
@@ -77,9 +92,13 @@ public final class AuthenticationStore {
         }
     }
 
-    /// サインアウトする。
+    /// Ends the session.
     ///
-    /// 失敗した場合は ``AuthError/signOutFailed(_:)`` を投げる。
+    /// ``state`` is not touched here; it follows once the authenticator reports the user as
+    /// gone, which keeps sign-outs triggered elsewhere on the same path as this one.
+    ///
+    /// - Throws: ``AuthError/signOutFailed(_:)``, after which stored credentials may still be
+    ///   on the device.
     public func signOut() async throws {
         do {
             try await authenticator.signOut()
@@ -88,11 +107,12 @@ public final class AuthenticationStore {
         }
     }
 
-    /// 現在のアカウントを削除する。
+    /// Deletes the signed-in account. Irreversible.
     ///
-    /// 失敗した場合は ``AuthError/deleteAccountFailed(_:)`` を投げる。
-    /// 未認証状態で呼ぶと、`Authenticator` 実装によっては ``AuthError/notAuthenticated`` が
-    /// `deleteAccountFailed` にラップされて throw される。
+    /// - Throws: ``AuthError/deleteAccountFailed(_:)``. Everything the authenticator raised
+    ///   arrives wrapped in that case, including ``AuthError/notAuthenticated`` when there was
+    ///   no session, and a provider's refusal when the last sign-in is too old to authorise
+    ///   deletion.
     public func deleteAccount() async throws {
         do {
             try await authenticator.deleteAccount()
@@ -115,8 +135,8 @@ public final class AuthenticationStore {
 
     private func startObservingAuthState() {
         let stream = authenticator.authStateChanges()
-        // 観測は単一の MainActor タスクで逐次実行する。`await handle` により
-        // emission は 1 件ずつ完結してから次に進むため、重複/競合が起きない。
+        // A single main-actor task drains the stream serially: awaiting each handler means one
+        // emission finishes before the next begins, so nothing interleaves.
         observationTask = Task { @MainActor [weak self] in
             for await user in stream {
                 guard let self else { break }
@@ -132,25 +152,25 @@ public final class AuthenticationStore {
             return
         }
 
-        // 既にプロビジョニング済みなら即 authenticated（フリッカー防止）。
+        // Already provisioned: go straight through, so the UI never flashes a loading state.
         if provisionedUserID == user.id {
             state = .authenticated(user)
             return
         }
 
-        // `provisionedUserID` への代入は await の前（同期）なので、同一ユーザーの
-        // 連続 emission が重複してプロビジョニングを起動しない。
+        // Claim the user synchronously, before any await, so back-to-back emissions for the
+        // same user cannot both start provisioning.
         provisionedUserID = user.id
         state = .authenticatedPendingProvisioning
         do {
             try await postAuthentication.perform(for: user)
-            // プロビジョニング中にサインアウト等で予約解除されていなければ確定。
+            // Commit only if the claim still stands; a sign-out during provisioning drops it.
             if provisionedUserID == user.id {
                 state = .authenticated(user)
             }
         } catch {
             if provisionedUserID == user.id {
-                provisionedUserID = nil   // 失敗時は再試行を許可する。
+                provisionedUserID = nil   // Release the claim so a later attempt can provision.
             }
             state = .error(AuthError.postAuthenticationFailed(error))
         }

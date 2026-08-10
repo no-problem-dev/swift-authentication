@@ -7,7 +7,10 @@ import UIKit
 import AppKit
 #endif
 
-/// `ASAuthorizationController` の表示アンカーを解決する。
+/// Finds the window the system should anchor the Apple authorization sheet to.
+///
+/// Prefers the key window of the foreground scene and falls back to an empty anchor rather
+/// than trapping, so a process with no visible window fails the sign-in instead of crashing.
 @MainActor
 enum PresentationAnchorProvider {
     static func anchor() -> ASPresentationAnchor {

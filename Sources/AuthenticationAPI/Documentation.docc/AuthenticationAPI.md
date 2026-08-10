@@ -1,39 +1,40 @@
 # ``AuthenticationAPI``
 
-REST API を介したログイン後処理とトークンアダプターを提供するバックエンド連携モジュール。
+Post-sign-in provisioning over REST, and the adapter that gives an API client its bearer token.
 
 ## Overview
 
-`AuthenticationAPI` は swift-api-client との橋渡しを担う 2 つの役割を提供する。
+`AuthenticationAPI` is the seam between this package and swift-api-client. It does two things.
 
-**1. ログイン後処理（ユーザープロビジョニング）**
+**1. Provisioning the user after sign-in**
 
-``APIUserProvisioning`` は ``Authentication/PostAuthenticationAction`` を実装し、
-認証成功後にバックエンドの初期化エンドポイント（既定 `POST /auth/initialize`）を呼ぶ。
-``Authentication/AuthenticationStore`` はセッション中に同一ユーザーへ一度だけ呼び出す。
+``APIUserProvisioning`` conforms to `PostAuthenticationAction` and posts to
+the backend's initialization endpoint — `/auth/initialize` unless you say otherwise — as soon
+as a session exists. `AuthenticationStore` calls it once per user per
+session, but retries and reinstalls mean the endpoint itself has to be idempotent.
 
 ```swift
 import Authentication
 import AuthenticationAPI
 import AuthenticationFirebase
 
-// 合成ルートでの組み立て例
-// apiClient は swift-api-client の APIExecutable 実装
+// At the composition root.
+// myAPIClient is any swift-api-client APIExecutable.
 let store = AuthenticationStore(
     authenticator: FirebaseAuthenticator(),
     postAuthentication: APIUserProvisioning(
         apiClient: myAPIClient,
-        path: "/auth/initialize"      // エンドポイントパスをカスタマイズ可能
+        path: "/auth/initialize"      // Point it anywhere your backend expects.
     )
 )
 ```
 
-**2. トークンアダプター**
+**2. Supplying the token**
 
-``APITokenProviderAdapter`` は ``Authentication/AuthTokenProviding`` を
-swift-api-client の `AuthTokenProvider` プロトコルに橋渡しする。
-これにより `AuthenticationFirebase` の `FirebaseTokenProvider` を
-APIClient に注入でき、`AuthenticationFirebase` は swift-api-client に依存しない。
+``APITokenProviderAdapter`` bridges `AuthTokenProviding` to the
+`AuthTokenProvider` protocol swift-api-client expects. That is what lets a
+`FirebaseTokenProvider` reach an API client while `AuthenticationFirebase` stays free of any
+swift-api-client dependency — and the other way round.
 
 ```swift
 import AuthenticationAPI
@@ -41,17 +42,16 @@ import AuthenticationFirebase
 
 let tokenProvider = FirebaseTokenProvider()
 let adapter = APITokenProviderAdapter(tokenProvider)
-// adapter を swift-api-client のイニシャライザに渡す
+// Hand the adapter to the API client's initializer.
 ```
 
 ## Topics
 
-### ログイン後処理
+### Provisioning
 
 - ``APIUserProvisioning``
 - ``UserProvisioningContract``
-- ``UserProvisioningResponse``
 
-### トークンアダプター
+### Token adapter
 
 - ``APITokenProviderAdapter``

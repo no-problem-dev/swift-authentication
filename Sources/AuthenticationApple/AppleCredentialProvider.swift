@@ -2,18 +2,21 @@ import Foundation
 import AuthenticationServices
 import Authentication
 
-/// Sign in with Apple の資格情報取得（取得層の具象）。
+/// Runs Sign in with Apple and returns the credential it produced.
 ///
-/// `ASAuthorizationController` を起動し、正しい nonce ハンドリング
-/// （リクエストには SHA256 を設定し、生 nonce を資格情報へ載せる）で
-/// vendor 非依存な ``AuthCredential`` を生成する。
+/// Presents `ASAuthorizationController` and handles the nonce the way Apple requires: the
+/// request carries the SHA-256 hash while the credential carries the raw value, so the server
+/// can match the two and reject a replayed identity token. Sending the pair the other way
+/// round yields a token that cannot be verified.
 public final class AppleCredentialProvider: CredentialProvider, @unchecked Sendable {
     public let providerID = AuthProviderID.apple
     private let requestedScopes: [ASAuthorization.Scope]
 
-    /// Apple 資格情報プロバイダを生成する。
+    /// Creates a provider.
     ///
-    /// - Parameter requestedScopes: Apple に要求するスコープ。省略時は `.fullName` と `.email`。
+    /// - Parameter requestedScopes: What to ask Apple for. Defaults to the full name and the
+    ///   email address; narrow it if the app genuinely needs neither, since Apple returns the
+    ///   name only once and never again for the same account.
     public init(requestedScopes: [ASAuthorization.Scope] = [.fullName, .email]) {
         self.requestedScopes = requestedScopes
     }
@@ -31,8 +34,11 @@ public final class AppleCredentialProvider: CredentialProvider, @unchecked Senda
     }
 }
 
-/// `ASAuthorizationController` の 1 回のフローを駆動するドライバ。
-/// 自身を保持してコールバックまで生存し、完了時に継続を再開する。
+/// Drives one `ASAuthorizationController` flow and resumes a continuation with its outcome.
+///
+/// It holds a reference to itself because the controller does not retain its delegate: without
+/// that, the object would be deallocated before the callback and the continuation would never
+/// resume. The reference is dropped the moment it does.
 @MainActor
 private final class AppleAuthorizationDriver: NSObject {
     private let rawNonce: String
