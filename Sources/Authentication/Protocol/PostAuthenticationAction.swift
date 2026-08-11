@@ -13,8 +13,10 @@ public protocol PostAuthenticationAction: Sendable {
     /// Runs the post-sign-in work for a user.
     ///
     /// - Parameter user: The user whose session was just established.
-    /// - Throws: Anything the work raised. ``AuthenticationStore`` wraps it in
-    ///   ``AuthError/postAuthenticationFailed(_:)`` and leaves the session signed in, so a
+    /// - Throws: Anything the work raised. ``AuthenticationStore`` publishes an `AuthError`
+    ///   unchanged and wraps anything else in ``AuthError/postAuthenticationFailed(_:)``, so
+    ///   throwing ``AuthError/sessionExpired(_:)`` or ``AuthError/notPermitted(_:)`` is how an
+    ///   action says which remedy applies. Either way the session stays signed in, so a
     ///   failure here strands the user between states until a later attempt succeeds.
     func perform(for user: AuthUser) async throws
 }

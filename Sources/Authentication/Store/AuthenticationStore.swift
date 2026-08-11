@@ -172,7 +172,11 @@ public final class AuthenticationStore {
             if provisionedUserID == user.id {
                 provisionedUserID = nil   // Release the claim so a later attempt can provision.
             }
-            state = .error(AuthError.postAuthenticationFailed(error))
+            // An action that already named its failure keeps that name. Wrapping an
+            // `AuthError.notPermitted` in `postAuthenticationFailed` would put the caller back
+            // where it started: one case for a refusal to re-authenticate against and a refusal
+            // to stop asking about, told apart only by unwrapping.
+            state = .error(error as? AuthError ?? AuthError.postAuthenticationFailed(error))
         }
     }
 }

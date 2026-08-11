@@ -7,7 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-None
+### Added
+
+- **BREAKING** — `AuthError.sessionExpired(_:)` and `.notPermitted(_:)`, with the matching
+  `AuthError.Code` cases. Source-breaking for an exhaustive switch.
+
+  The package had **zero** references to `unauthorized`, `401` or `403`: it compiled without ever
+  expressing the distinction, rethrowing a raw `APIError` and flattening everything into
+  `postAuthenticationFailed`. That is the real defect the upstream split exposed — telling a dead
+  session from a refusal the account will keep receiving is precisely this package's job, and
+  re-authenticating fixes only the first.
+
+  A 401 that reaches here now genuinely means the session is dead: api-client 5.0.0 already
+  refreshes the token and resends once before raising it.
+
+### Changed
+
+- `AuthenticationStore` republishes an `AuthError` from a `PostAuthenticationAction` unchanged
+  instead of wrapping it. Wrapping would have restored exactly what upstream just fixed — one case
+  for both refusals, told apart only by unwrapping.
+- Depends on swift-api-contract directly. api-client 3.0.3 stopped re-exporting it, so every symbol
+  this package took from there was arriving through a re-export that is gone.
+
+
+### Added
+
+- **`AuthError.sessionExpired` and `AuthError.notPermitted`.** swift-api-client 4.0.0 splits
+  `APIError.unauthorized` into a 401 and a 403, and this is the package that exists to act on
+  that difference. A 401 means the session is dead and a new sign-in is the fix — the client
+  has already refreshed the token and resent once by the time it surfaces, so the credential
+  in hand will not start working. A 403 means the account itself is refused, and re-signing-in
+  produces the same answer, so a flow that responds to it the same way loops. Both carry the
+  underlying error, which carries the response body the server sent.
+
+### Changed
+
+- **BREAKING** — `APIUserProvisioning.perform(for:)` raises those two instead of passing an
+  `APIError` through, and `AuthenticationStore` publishes an `AuthError` from a
+  `PostAuthenticationAction` unchanged rather than wrapping it in
+  `postAuthenticationFailed`. Wrapping would have put the caller back where it started: one
+  case covering both refusals, told apart only by unwrapping. Code matching
+  `AuthError.Code.postAuthenticationFailed` for a 401 or a 403 now matches `.sessionExpired`
+  or `.notPermitted`.
+- Raised the swift-api-client pin to 5.0.0, and `AuthenticationAPI` depends on
+  swift-api-contract directly. api-client stopped re-exporting `APIContract` in 3.0.3, so the
+  contract types this target names in its own public API — `APIExecutable`, `APIContract`,
+  `EmptyOutput` — had no module to come from.
+
+### Known limitation
+
+- A permanently refused account is retried on every auth-state change. `AuthenticationStore`
+  records provisioning as one claimed user id, which cannot distinguish "not attempted" from
+  "refused for good": keeping the claim would report the user as authenticated without having
+  provisioned, so the claim is released and the next emission tries again.
 
 ## [5.2.0] - 2026-08-08
 

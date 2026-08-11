@@ -185,7 +185,38 @@ struct AuthenticationStoreTests {
         authenticator.emit(user)
         await waitUntil { if case .error = store.state { return true } else { return false } }
 
-        #expect({ if case .error = store.state { return true } else { return false } }())
+        #expect(publishedCode(of: store) == .postAuthenticationFailed)
+    }
+
+    /// An action that says "sign in again" and one that says "stop asking" have to stay
+    /// distinguishable. Wrapping both in `postAuthenticationFailed` reintroduces the guess.
+    @Test(
+        "an AuthError from the post-auth action is published unchanged",
+        arguments: [AuthError.Code.sessionExpired, .notPermitted]
+    )
+    func postAuthErrorKeepsItsName(code: AuthError.Code) async throws {
+        let raised: AuthError = code == .sessionExpired
+            ? .sessionExpired(TestError("401"))
+            : .notPermitted(TestError("403"))
+        let user = AuthUser(id: "p")
+        let authenticator = MockAuthenticator(stubbedUser: user)
+        let store = AuthenticationStore(
+            authenticator: authenticator,
+            postAuthentication: MockPostAuthenticationAction(error: raised)
+        )
+
+        authenticator.emit(user)
+        await waitUntil { if case .error = store.state { return true } else { return false } }
+
+        #expect(publishedCode(of: store) == code)
+    }
+
+    @MainActor
+    private func publishedCode(of store: AuthenticationStore) -> AuthError.Code? {
+        guard case .error(let error) = store.state, let authError = error as? AuthError else {
+            return nil
+        }
+        return authError.code
     }
 
     @Test("signOut failure throws .signOutFailed")

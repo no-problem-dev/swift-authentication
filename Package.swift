@@ -22,7 +22,10 @@ let package = Package(
         .library(name: "AuthenticationAPI", targets: ["AuthenticationAPI"])
     ],
     dependencies: [
-        .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "3.0.0"),
+        .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "5.0.0"),
+        // api-client 3.0.3 stopped re-exporting APIContract, so the contract types this package
+        // declares in its own public API have to be depended on directly.
+        .package(url: "https://github.com/no-problem-dev/swift-api-contract.git", from: "2.0.0"),
         .package(url: "https://github.com/firebase/firebase-ios-sdk.git", .upToNextMajor(from: "12.5.0")),
         .package(url: "https://github.com/google/GoogleSignIn-iOS.git", .upToNextMajor(from: "9.0.0")),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", .upToNextMajor(from: "1.4.0"))
@@ -76,7 +79,8 @@ let package = Package(
             name: "AuthenticationAPI",
             dependencies: [
                 "Authentication",
-                .product(name: "APIClient", package: "swift-api-client")
+                .product(name: "APIClient", package: "swift-api-client"),
+                .product(name: "APIContract", package: "swift-api-contract")
             ],
             path: "Sources/AuthenticationAPI"
         ),
@@ -94,7 +98,10 @@ let package = Package(
         ),
         .testTarget(
             name: "AuthenticationAPITests",
-            dependencies: ["AuthenticationAPI"],
+            dependencies: [
+                "AuthenticationAPI",
+                .product(name: "APIContract", package: "swift-api-contract")
+            ],
             path: "Tests/AuthenticationAPITests"
         ),
         .testTarget(

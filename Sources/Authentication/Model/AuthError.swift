@@ -21,7 +21,25 @@ public enum AuthError: Error {
     case sessionExchangeFailed(any Error)
     /// The session was established but the post-authentication work failed, leaving the user
     /// signed in on the server and unprovisioned in the app.
+    ///
+    /// A server that rejected the session or refused the account reports
+    /// ``sessionExpired(_:)`` or ``notPermitted(_:)`` instead, because those two need
+    /// different responses and this case cannot say which happened.
     case postAuthenticationFailed(any Error)
+    /// The server rejected the session itself — a 401. Signing in again is what fixes it.
+    ///
+    /// The token was stale, revoked, or belongs to a disabled account. Which of those it was
+    /// does not change the response: obtain a new credential. A refresh has already been
+    /// tried by the time this is raised, so the one held now will not start working.
+    ///
+    /// Distinct from ``notPermitted(_:)``, where a new session changes nothing.
+    case sessionExpired(any Error)
+    /// The server accepted the session and refused the operation anyway — a 403.
+    ///
+    /// The account may not do this: a missing scope, a plan limit, a suspension. Signing out
+    /// and back in produces the same refusal, so a flow that responds to it by
+    /// re-authenticating loops. Report what the server said instead; the payload carries it.
+    case notPermitted(any Error)
     /// Clearing the local session failed, which means stored credentials may still be on the
     /// device.
     case signOutFailed(any Error)
@@ -43,6 +61,8 @@ extension AuthError {
         case credentialAcquisitionFailed
         case sessionExchangeFailed
         case postAuthenticationFailed
+        case sessionExpired
+        case notPermitted
         case signOutFailed
         case deleteAccountFailed
         case notAuthenticated
@@ -60,6 +80,8 @@ extension AuthError {
         case .credentialAcquisitionFailed: .credentialAcquisitionFailed
         case .sessionExchangeFailed: .sessionExchangeFailed
         case .postAuthenticationFailed: .postAuthenticationFailed
+        case .sessionExpired: .sessionExpired
+        case .notPermitted: .notPermitted
         case .signOutFailed: .signOutFailed
         case .deleteAccountFailed: .deleteAccountFailed
         case .notAuthenticated: .notAuthenticated

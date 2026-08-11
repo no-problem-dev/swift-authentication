@@ -1,5 +1,6 @@
 import Foundation
 import APIClient
+import APIContract
 
 /// The request this package sends to provision a user: a `POST` to a caller-chosen path.
 ///

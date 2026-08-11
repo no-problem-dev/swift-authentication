@@ -21,7 +21,9 @@ public enum AuthenticationState {
     /// The exchange or the post-authentication work failed.
     ///
     /// Not necessarily terminal: a failed provisioning is retried on the next auth-state
-    /// change, and the underlying session may still be live.
+    /// change, and the underlying session may still be live. The retry is unconditional, so
+    /// an ``AuthError/notPermitted(_:)`` comes back on every subsequent change until
+    /// something on the server side alters the answer.
     case error(any Error)
 
     /// Whether the session is fully usable.

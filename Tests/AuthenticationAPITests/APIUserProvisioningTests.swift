@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import APIClient
+import APIContract
 import Authentication
 @testable import AuthenticationAPI
 
@@ -46,6 +47,41 @@ struct APIUserProvisioningTests {
         let provisioning = APIUserProvisioning(apiClient: mock)
 
         await #expect(throws: MockError.self) {
+            try await provisioning.perform(for: AuthUser(id: "u"))
+        }
+    }
+
+    /// A 401 and a 403 both stop provisioning, and want opposite responses. Passing the
+    /// `APIError` through would leave that to the caller's guess.
+    @Test(
+        "a rejected session and a refused account are told apart",
+        arguments: [
+            (APIError.unauthorized(data: Data(#"{"error":"expired"}"#.utf8)), AuthError.Code.sessionExpired),
+            (APIError.forbidden(data: Data(#"{"error":"plan"}"#.utf8)), AuthError.Code.notPermitted)
+        ]
+    )
+    func performNamesAuthFailures(apiError: APIError, expected: AuthError.Code) async {
+        let mock = MockAPIExecutable()
+        mock.error = apiError
+        let provisioning = APIUserProvisioning(apiClient: mock)
+
+        do {
+            try await provisioning.perform(for: AuthUser(id: "u"))
+            Issue.record("expected throw")
+        } catch let error as AuthError {
+            #expect(error.code == expected)
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+    }
+
+    @Test("any other API error is passed through unchanged")
+    func performPassesOtherAPIErrorsThrough() async {
+        let mock = MockAPIExecutable()
+        mock.error = APIError.httpError(statusCode: 500, data: Data())
+        let provisioning = APIUserProvisioning(apiClient: mock)
+
+        await #expect(throws: APIError.self) {
             try await provisioning.perform(for: AuthUser(id: "u"))
         }
     }
