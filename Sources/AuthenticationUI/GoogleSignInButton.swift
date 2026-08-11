@@ -20,7 +20,7 @@ public struct GoogleSignInButton: View {
     private let onError: (@MainActor (any Error) -> Void)?
 
     public init(
-        title: String = "Google でログイン",
+        title: String = "Sign in with Google",
         onError: (@MainActor (any Error) -> Void)? = nil
     ) {
         self.title = title
@@ -30,7 +30,7 @@ public struct GoogleSignInButton: View {
 
     /// Creates a button that runs your action on tap, leaving the store untouched.
     public init(
-        title: String = "Google でログイン",
+        title: String = "Sign in with Google",
         perform action: @escaping @MainActor () async -> Void
     ) {
         self.title = title

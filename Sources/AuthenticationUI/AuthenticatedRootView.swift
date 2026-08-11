@@ -71,9 +71,9 @@ private struct ConfigurationErrorView: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 60))
                 .foregroundStyle(.red)
-            Text("認証設定エラー")
+            Text("Authentication configuration error")
                 .font(.title)
-            Text("AuthenticationStore が Environment に設定されていません")
+            Text("No AuthenticationStore is set in the environment")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -87,14 +87,14 @@ private struct ConfigurationErrorView: View {
         loading: { ProgressView() },
         unauthenticated: {
             VStack(spacing: 16) {
-                Text("サインイン").font(.title)
+                Text("Sign in").font(.title)
                 GoogleSignInButton()
                 AppleSignInButton()
             }
             .padding(.horizontal, 32)
         },
-        error: { Text("エラー: \($0.localizedDescription)") },
-        authenticated: { user in Text("ようこそ \(user.id)") }
+        error: { Text("Error: \($0.localizedDescription)") },
+        authenticated: { user in Text("Welcome, \(user.id)") }
     )
     .authenticationStore(.previewUnauthenticated)
 }

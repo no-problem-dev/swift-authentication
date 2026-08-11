@@ -53,16 +53,16 @@ public final class GoogleCredentialProvider: CredentialProvider, @unchecked Send
     private static func presentSignIn() async throws -> GIDSignInResult {
         #if canImport(UIKit)
         guard let presenter = TopViewControllerProvider.topViewController() else {
-            throw AuthError.configuration("Google Sign-In: 表示元の UIViewController が見つかりません")
+            throw AuthError.configuration("Google Sign-In: no presenting UIViewController was found")
         }
         return try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter)
         #elseif canImport(AppKit)
         guard let window = NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first else {
-            throw AuthError.configuration("Google Sign-In: 表示元の NSWindow が見つかりません")
+            throw AuthError.configuration("Google Sign-In: no presenting NSWindow was found")
         }
         return try await GIDSignIn.sharedInstance.signIn(withPresenting: window)
         #else
-        throw AuthError.configuration("Google Sign-In: このプラットフォームは未対応です")
+        throw AuthError.configuration("Google Sign-In: this platform is not supported")
         #endif
     }
 

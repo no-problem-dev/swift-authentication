@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Every string this package renders or throws is now English. Nothing stops compiling, but the text
+  changes in the consumer's app, not in this repository: `GoogleSignInButton`'s default `title` was
+  `"Google でログイン"` and is now `"Sign in with Google"` (which is also what Google's branding
+  rules specify, and what the adjacent `ASAuthorizationAppleIDButton` says in English), the
+  configuration-error screen shown when no store is in the environment is translated, and the three
+  `AuthError.configuration` messages thrown by `GoogleCredentialProvider` are translated. An app
+  that wants Japanese passes its own `title`, as it already could.
+
 ## [6.0.0] - 2026-08-11
 
 ### Added
