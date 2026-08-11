@@ -1,281 +1,311 @@
 # Changelog
 
-このプロジェクトのすべての重要な変更は、このファイルに記録されます。
+All notable changes to this project are recorded in this file.
 
-このフォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づいており、
-このプロジェクトは [Semantic Versioning](https://semver.org/lang/ja/) に準拠しています。
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [未リリース]
+## [Unreleased]
 
-なし
+None
+
+## [5.2.0] - 2026-08-08
+
+### Added
+
+- **The label on the Apple button can be chosen.** In an app that does not make people pick
+  between signing up and signing in, Google saying "Continue" next to Apple saying "Sign in"
+  reads as two different things happening (reported from real use). Apple provides three
+  labels — `signIn` / `continue` / `signUp` — for exactly this. The default stays `.signIn`,
+  so existing call sites are unchanged.
+
+## [5.1.0] - 2026-08-06
+
+### Added
+
+- **The official buttons work for apps that hold their own session.** The Apple and Google
+  sign-in buttons were pinned to `authenticationStore`, so an app with its own session
+  (an anonymous account being linked, say — a transition this package's store does not
+  cover) could not borrow just the appearance, and hand-rolled a list row out of SF Symbols
+  instead. A row with `apple.logo` in it is not accepted as a Sign in with Apple button.
+  Both buttons gain an initialiser that runs a closure when pressed. Purely additive; the
+  existing store-backed form works as before.
 
 ## [5.0.1] - 2026-08-02
 
-**プライバシーマニフェストを同梱。** 取り込む側が肩代わりして申告する必要がなくなる。
+**Ships a privacy manifest.** Consumers no longer have to declare on this package's behalf.
 
-`FirebaseConfigurator` は debug_mode の印と「再インストール後の初回起動か」の印を
-`UserDefaults` で読み書きする。これは Apple が理由の申告を求める API で、
-申告が無いと利用者に ITMS-91053 の警告が届く。
+`FirebaseConfigurator` reads and writes the debug_mode marker and the "is this the first
+launch after a reinstall" marker through `UserDefaults`. That is an API Apple requires a
+reason for, and without the declaration the consumer receives an ITMS-91053 warning.
 
-- 申告は 1 件だけ（`UserDefaults` / `CA92.1` = 自分のアプリの領域）
-- `UserDefaults` を触るのは `AuthenticationFirebase` だけなので、そこにだけ置く
-- **収集は書かない。** メールアドレスや表示名を持つのは Firebase Authentication で、
-  あちらが自分のマニフェストを同梱している。並べると二重に申告することになる
-- 理由の要る API を呼んでいない他の 5 ターゲットには置かない。
-  **空のマニフェストを配ると「調べた結果ゼロ」と「置き忘れ」の区別がつかなくなる**
+- One declaration only (`UserDefaults` / `CA92.1` = this app's own container)
+- `AuthenticationFirebase` is the only target that touches `UserDefaults`, so the manifest
+  goes there and nowhere else
+- **Collection is not declared.** Firebase Authentication is what holds the email address and
+  the display name, and it ships its own manifest. Declaring it here too would double-count it
+- Nothing is added to the other five targets, none of which call a reason-requiring API.
+  **Shipping an empty manifest makes "we checked and there is nothing" indistinguishable
+  from "we forgot"**
 
-利用者側の対応は不要。取り込む版を上げるだけでよい。
+Nothing to do on the consumer side beyond raising the version you depend on.
 
 ## [5.0.0] - 2026-07-20
 
-### 修正
+### Fixed
 
-- **`UserProvisioningContract` が応答本文の形を決め打ちしており、バックエンドが別の形を
-  返すとサインイン自体が通らなくなっていた問題を解消。**
-  `Output` は `{ initialized, message }` を必須で要求する一方、`APIUserProvisioning.perform`
-  は結果を `_ =` で捨てていた。バックエンドが違う形を返すとデコードで落ち、呼び出し元では
-  認証失敗として扱われる。応答本文の形はアプリ側の都合で決まるもので、このパッケージが
-  知るべきことではない。`Output` を `EmptyOutput` にして本文を読まない形にした。
+- **`UserProvisioningContract` hard-coded the shape of the response body, so a backend that
+  returned a different shape broke sign-in itself.**
+  `Output` required `{ initialized, message }`, while `APIUserProvisioning.perform` threw the
+  result away with `_ =`. A backend returning something else failed to decode, and the caller
+  saw it as an authentication failure. The shape of the response body is the app's business,
+  not something this package should know. `Output` is now `EmptyOutput` and the body is not read.
 
-  同じ欠陥は 1.x 系で 1.1.10（2026-07-20）として修正済みだったが、2.0.0 の再設計時に
-  `AuthInitializeContract` → `UserProvisioningContract` として作り直された際に復活していた。
-  既存テストが `executeWithResponse` を差し替えるモックで**実デコード経路を迂回**していた
-  ため、両系列とも検知できなかった。実デコーダに通す回帰テストを追加している。
+  The same defect was fixed on the 1.x line as 1.1.10 (2026-07-20), but came back when the
+  2.0.0 redesign rebuilt `AuthInitializeContract` as `UserProvisioningContract`. Neither line
+  caught it, because the existing tests **bypassed the real decode path** with a mock that
+  replaced `executeWithResponse`. A regression test that goes through the real decoder has
+  been added.
 
-### ⚠️ 破壊的変更
+### ⚠️ Breaking Changes
 
-- `UserProvisioningResponse` を削除。応答本文を読まなくなったため用途が消えた。
-  ワークスペース内に利用者はいない。独自の応答型が必要な場合は、`APIContract & APIInput`
-  （`Input == Self`）を自前で定義して `APIExecutable` に直接渡す。
+- Removed `UserProvisioningResponse`. With the body no longer read, it has no use. Nothing in
+  the workspace used it. If you need your own response type, define your own
+  `APIContract & APIInput` (`Input == Self`) and hand it straight to `APIExecutable`.
 
-### 変更
+### Changed
 
-- `UserProvisioningContract` の doc から「別レスポンス型が必要なら独自の契約を
-  `APIUserProvisioning` に渡す」という記述を削除。`APIUserProvisioning.init` は
-  `apiClient` と `path` しか受け取らず、**契約を渡す口は存在しなかった**（実装にない
-  逃げ道を doc が約束していた）。本文を読まなくなったのでこの逃げ道自体が不要になった。
+- Removed the line in `UserProvisioningContract`'s documentation saying to "pass your own
+  contract to `APIUserProvisioning` if you need a different response type".
+  `APIUserProvisioning.init` takes only `apiClient` and `path` — **there was no way to pass a
+  contract** (the documentation promised an escape hatch the implementation did not have).
+  Now that the body is not read, the escape hatch is not needed.
 
 ## [4.0.0] - 2026-07-19
 
-### ⚠️ 破壊的変更
+### ⚠️ Breaking Changes
 
-- swift-api-client の依存を `from: "3.0.0"` に更新。api-client 3.0.0 の
-  `AuthTokenProvider` は要件が `getToken()` → `fetchToken()` に改名されているため、
-  **`APITokenProviderAdapter.getToken()` を `fetchToken()` に改名**した。
-  この型を直接呼んでいる箇所は呼び出し名の変更が必要（プロトコル経由の注入は影響なし）。
+- Updated the swift-api-client dependency to `from: "3.0.0"`. api-client 3.0.0 renamed the
+  `AuthTokenProvider` requirement from `getToken()` to `fetchToken()`, so
+  **`APITokenProviderAdapter.getToken()` is renamed to `fetchToken()`**.
+  Anywhere calling that type directly needs the new name (injection through the protocol is
+  unaffected).
 
-  api-client 3.0.0 は 2026-06-27 の監査で Swift API Design Guidelines 違反
-  （`get` prefix）として改名されたが、以後どの消費者も移行しておらず「誰も乗っていない
-  新 major」になっていた。本リリースで authentication / cached-remote-image / llm-cloud
-  の 3 消費者を同時に 3.x へ引き上げ、ファミリーの世代分裂を解消する。
+  api-client 3.0.0 made that rename in the 2026-06-27 audit, as a Swift API Design Guidelines
+  violation (the `get` prefix), but no consumer moved afterwards, leaving a new major nobody
+  was on. This release raises all three consumers — authentication, cached-remote-image and
+  llm-cloud — to 3.x at once, ending the split generations across the family.
 
 ## [3.0.0] - 2026-07-19
 
-### ⚠️ 破壊的変更
+### ⚠️ Breaking Changes
 
-- swift-api-client の依存を `from: "2.3.1"` に更新（ピン世代統一）。
-  `UserProvisioningContract` を APIInput 2.x に準拠させ、`decode` の decoder 引数を
-  `JSONDecoder` から `any APIBodyDecoder`（Codec seam）に変更。
-- `AuthTokenProviding.token()` を `async throws` に変更。`FirebaseTokenProvider` が
-  トークン取得失敗を握りつぶして `nil` を返していた silent fallback を廃止し、
-  Firebase のエラーをそのまま伝播する（`nil` は「未認証」の意味に限定）。
-  `APITokenProviderAdapter.getToken()` も同エラーを透過する。
+- Updated the swift-api-client dependency to `from: "2.3.1"` (unifying the pinned generation).
+  `UserProvisioningContract` now conforms to APIInput 2.x, and `decode`'s decoder argument
+  changes from `JSONDecoder` to `any APIBodyDecoder` (the Codec seam).
+- `AuthTokenProviding.token()` is now `async throws`. `FirebaseTokenProvider` used to swallow
+  a token fetch failure and return `nil`; that silent fallback is gone and Firebase's error
+  propagates as-is (`nil` now means "not authenticated", and nothing else).
+  `APITokenProviderAdapter.getToken()` passes the same error through.
 
-### 追加
+### Added
 
-- `AuthenticationStore.deleteAccount()` のユニットテストを追加
-  （成功時の状態遷移・プロビジョニング予約の解除・連続呼び出しの安全性・
-  失敗時の `deleteAccountFailed` ラップ）。
-- `APITokenProviderAdapter` のユニットテストを追加（トークン透過・未認証 `nil`・
-  エラー伝播）。
+- Unit tests for `AuthenticationStore.deleteAccount()` (state transition on success, cancelling
+  the provisioning reservation, safety under repeated calls, and the `deleteAccountFailed`
+  wrapping on failure).
+- Unit tests for `APITokenProviderAdapter` (token pass-through, `nil` when not authenticated,
+  error propagation).
 
 ## [2.0.0] - 2026-05-30
 
-### ⚠️ 破壊的変更（全面再設計・後方互換なし）
+### ⚠️ Breaking Changes (a full redesign, no backward compatibility)
 
-単一ターゲットに Firebase / GoogleSignIn / REST / UI を同梱していた構成を、
-責務とベンダー依存でターゲット分割するクリーンアーキテクチャに刷新。
+The single target that bundled Firebase, GoogleSignIn, REST and UI together is replaced by a
+clean architecture that splits targets by responsibility and by vendor dependency.
 
-- **ターゲット分割**: `Authentication`（コア・依存ゼロ）/ `AuthenticationUI` /
+- **Target split**: `Authentication` (the core, no dependencies) / `AuthenticationUI` /
   `AuthenticationApple` / `AuthenticationGoogle` / `AuthenticationFirebase` /
-  `AuthenticationAPI`。コアと UI はベンダー SDK 非依存になり、画面は Firebase 無しで
-  プレビュー可能。
-- **3 層責務分離**: 資格情報取得（`CredentialProvider`）/ セッション交換
-  （`Authenticator`）/ ログイン後処理（`PostAuthenticationAction`）。
-- **vendor 非依存の型システム**: `signInWithGoogle()` 等のプロバイダ別メソッドを廃止し、
-  汎用の `signIn(with: AuthCredential)` に統一。`AuthProviderID` は拡張可能。
-- **命名刷新**: `Impl` サフィックスを全廃。具象名が実装を表す
-  （`FirebaseAuthenticator` / `APIUserProvisioning` / `AppleCredentialProvider` 等）。
-  `AuthenticationUseCase(Impl)` → `@Observable` な `AuthenticationStore`。
-- **状態ホルダ**: `@MainActor @Observable final class AuthenticationStore` を Environment
-  （`@Entry authenticationStore`）に注入。
-- **ログイン後処理の冪等性**を `AuthenticationStore` に一元化（旧 v1.1.9 の重複呼び出し
-  対策を統合し、明示サインイン経路とリスナ経路の二重発火を排除）。
-- Apple Sign-In の nonce ハンドリングを修正（リクエストに SHA256、資格情報に生 nonce）。
-- `FirebaseConfigure` → `FirebaseConfigurator`（エミュレータ + RELEASE ガード +
-  初回起動サインアウトを踏襲）。
-- SDK ゼロで動くコアのユニットテストを追加（swift-testing）。
+  `AuthenticationAPI`. The core and the UI no longer depend on a vendor SDK, so screens can be
+  previewed without Firebase.
+- **Three layers of responsibility**: obtaining credentials (`CredentialProvider`) / exchanging
+  them for a session (`Authenticator`) / what happens after login (`PostAuthenticationAction`).
+- **A vendor-independent type system**: the per-provider methods such as `signInWithGoogle()`
+  are gone, replaced by a single `signIn(with: AuthCredential)`. `AuthProviderID` is extensible.
+- **Renaming**: the `Impl` suffix is gone everywhere. A concrete name says what the
+  implementation is (`FirebaseAuthenticator` / `APIUserProvisioning` / `AppleCredentialProvider`
+  and so on). `AuthenticationUseCase(Impl)` → the `@Observable` `AuthenticationStore`.
+- **The state holder**: `@MainActor @Observable final class AuthenticationStore`, injected
+  through the Environment (`@Entry authenticationStore`).
+- **Idempotence of the post-login work** is now handled in one place in `AuthenticationStore`
+  (folding in the old v1.1.9 duplicate-call fix, and removing the double fire between the
+  explicit sign-in path and the listener path).
+- Fixed nonce handling for Apple Sign-In (SHA256 on the request, the raw nonce on the credential).
+- `FirebaseConfigure` → `FirebaseConfigurator` (keeping the emulator, the RELEASE guard and the
+  first-launch sign-out).
+- Added unit tests for the core that run with no SDK at all (swift-testing).
 
 ## [1.1.9] - 2026-01-18
 
-### 修正
-- `observeAuthState()` での重複 `initializeUser()` 呼び出しを防止
-  - Firebase Auth の `addStateDidChangeListener` が認証状態変更時に複数回イベントを発火する問題に対処
-  - `hasInitialized` フラグを追加し、認証セッション中は初回のみ API を呼び出すように変更
-  - サインアウト時にフラグをリセット
+### Fixed
+- Prevented the duplicate `initializeUser()` call in `observeAuthState()`
+  - Handles Firebase Auth's `addStateDidChangeListener` firing more than once on an auth state change
+  - Added a `hasInitialized` flag so the API is called only once per authentication session
+  - The flag is reset on sign-out
 
 ## [1.1.8] - 2026-01-03
 
-### 追加
-- 包括的な認証テストスイートを追加（52テスト）
-  - AuthenticationManager のユニットテスト
-  - FirebaseAuthTokenProvider のテスト
-  - モック・スタブを活用したテストカバレッジの向上
+### Added
+- A comprehensive authentication test suite (52 tests)
+  - Unit tests for AuthenticationManager
+  - Tests for FirebaseAuthTokenProvider
+  - Better coverage through mocks and stubs
 
 ## [1.1.7] - 2026-01-03
 
-### 変更
-- Swift 6.2対応
-  - `APIExecutor` を `APIExecutable` に変更
-  - `any APIClient` を `some APIExecutable` に変更
-  - `@Entry` マクロを使用してEnvironment Valueを簡潔に定義
-- MainActor対応
-  - viewController取得をMainActor Taskでラップし、Concurrency安全性を向上
-- コード整理
-  - 冗長なコメントを削除
-  - コードの可読性を向上
+### Changed
+- Swift 6.2 support
+  - `APIExecutor` → `APIExecutable`
+  - `any APIClient` → `some APIExecutable`
+  - Environment values defined concisely with the `@Entry` macro
+- MainActor
+  - Getting the view controller is wrapped in a MainActor Task, for concurrency safety
+- Tidying
+  - Removed redundant comments
+  - Improved readability
 
 ## [1.1.6] - 2025-11-13
 
-### 変更
-- Package.swift の依存関係バージョン指定を `.upToNextMajor(from:)` に明示的に変更
-  - `from:` と機能的には同じだが、セマンティックバージョニングに基づくバージョン更新の意図を明確化
-  - 変更対象: swift-api-client (1.0.0)、firebase-ios-sdk (12.5.0)、GoogleSignIn-iOS (9.0.0)、swift-docc-plugin (1.4.0)
+### Changed
+- Package.swift states dependency versions explicitly as `.upToNextMajor(from:)`
+  - Functionally the same as `from:`, but it makes the semantic-versioning intent explicit
+  - Affects: swift-api-client (1.0.0), firebase-ios-sdk (12.5.0), GoogleSignIn-iOS (9.0.0), swift-docc-plugin (1.4.0)
 
 ## [1.1.5] - 2025-11-12
 
-### 追加
-- Firebase Authentication エミュレーターサポート
-  - `Environment` enum を追加（`.production` / `.emulator(host:port:)`）
-  - `FIREBASE_AUTH_EMULATOR_HOST` 環境変数の自動設定
-  - RELEASEビルドでのエミュレーター使用を禁止（セキュリティ対策）
-  - デフォルトエミュレーター設定: localhost:9099
-- 初回起動時の自動サインアウト処理
-  - アプリ削除後の再インストール時に Firebase Auth のキーチェーン永続化による自動ログイン状態を解除
-  - UserDefaults で初回起動フラグを管理
-  - 完全に透過的な処理（ユーザーは意識不要）
+### Added
+- Firebase Authentication emulator support
+  - Added an `Environment` enum (`.production` / `.emulator(host:port:)`)
+  - `FIREBASE_AUTH_EMULATOR_HOST` set automatically
+  - Using the emulator in a RELEASE build is forbidden (a safety measure)
+  - Default emulator setting: localhost:9099
+- Automatic sign-out on first launch
+  - Clears the automatic login that Firebase Auth's keychain persistence leaves behind when the app is reinstalled after being deleted
+  - The first-launch flag is kept in UserDefaults
+  - Entirely transparent; the user does not have to think about it
 
-### 修正
-- エミュレーター接続実装を改善
-  - 環境変数設定（setenv）から `Auth.auth().useEmulator()` の明示的呼び出しに変更
-  - iOS SDK で正しく動作する実装パターンに修正
-- `FirebaseApp` 初期化順序を修正
-  - `signOutOnFirstLaunchIfNeeded()` を `FirebaseApp.configure()` の後に移動
-  - `FirebaseApp` 未初期化の場合の防御チェックを追加
+### Fixed
+- Better emulator connection
+  - Moved from setting an environment variable (setenv) to calling `Auth.auth().useEmulator()` explicitly
+  - Corrected to the pattern that actually works on the iOS SDK
+- Fixed the `FirebaseApp` initialisation order
+  - `signOutOnFirstLaunchIfNeeded()` moved after `FirebaseApp.configure()`
+  - Added a defensive check for `FirebaseApp` not being initialised
 
-### 設計方針
-- Authentication のみを対象（Firestore、Storage は含まない）
-- データアクセスは REST API 経由
-- DEBUG/RELEASE で自動的に環境切り替え可能
+### Design notes
+- Authentication only (not Firestore, not Storage)
+- Data access goes through a REST API
+- The environment switches automatically between DEBUG and RELEASE
 
 ## [1.1.4] - 2025-11-11
 
-### ⚠️ 破壊的変更
-- 認証UIを完全にリニューアルし、カスタマイズ可能な設計に刷新
-- `AuthenticationView` を削除し、代わりに `GoogleSignInButton` と `AppleSignInButton` を提供
-- `AuthenticatedRootView` の API を変更し、ViewBuilder パターンを採用
+### ⚠️ Breaking Changes
+- The authentication UI is rebuilt from scratch, into a customisable design
+- Removed `AuthenticationView`; `GoogleSignInButton` and `AppleSignInButton` are provided instead
+- Changed `AuthenticatedRootView`'s API to a ViewBuilder pattern
 
-### 追加
-- `GoogleSignInButton`: Google サインイン用の独立したボタンコンポーネント
-  - ローディング状態の表示
-  - エラーハンドリングコールバック
-  - アクセシブルなデザイン
-  - SwiftUI プレビュー付き
-- `AppleSignInButton`: Apple サインイン用のボタンコンポーネント
-  - iOS 専用（macOS では非サポート表示）
-  - カスタマイズ可能なスタイル（.black, .white, .whiteOutline）
-  - ローディングオーバーレイ
-  - SwiftUI プレビュー付き
-- Google ロゴアセット（1x, 2x, 3x）を Asset Catalog として追加
-- すべてのコンポーネントに包括的な SwiftUI プレビューを追加
+### Added
+- `GoogleSignInButton`: a standalone button component for Google sign-in
+  - Shows a loading state
+  - An error handling callback
+  - An accessible design
+  - With a SwiftUI preview
+- `AppleSignInButton`: a button component for Apple sign-in
+  - iOS only (macOS shows an unsupported message)
+  - Customisable styles (.black, .white, .whiteOutline)
+  - A loading overlay
+  - With a SwiftUI preview
+- Google logo assets (1x, 2x, 3x) added as an Asset Catalog
+- Comprehensive SwiftUI previews on every component
 
-### 変更
-- `AuthenticatedRootView` を 4 つの ViewBuilder パラメータに変更：
-  - `loading`: ローディング中・初期化中の表示（認証確認と初期化の両方で使用）
-  - `unauthenticated`: 未認証時の表示（サインイン画面）
-  - `error`: エラー発生時の表示
-  - `authenticated`: 認証完了後の表示（メインコンテンツ）
-- 各ボタンのデザインを統一されたアウトラインスタイルに変更し、視覚的な一貫性を向上
-- Package.swift にリソース処理を追加（Asset Catalog サポート）
+### Changed
+- `AuthenticatedRootView` now takes four ViewBuilder parameters:
+  - `loading`: shown while loading or initialising (used for both the auth check and initialisation)
+  - `unauthenticated`: shown when not authenticated (the sign-in screen)
+  - `error`: shown when something fails
+  - `authenticated`: shown once authenticated (the main content)
+- Both buttons share one outline style, for visual consistency
+- Package.swift handles resources (Asset Catalog support)
 
-### 削除
-- `AuthenticationView`: 完全にカスタマイズ可能な設計に置き換え
+### Removed
+- `AuthenticationView`: replaced by the fully customisable design
 
-### 設計思想
-- パッケージは認証ロジックと基本的なボタン UI のみを提供
-- スプラッシュ画面、サインイン画面のレイアウト、利用規約、プライバシーポリシーの配置などは、アプリ側で完全にカスタマイズ可能
-- ViewBuilder パターンにより、各認証状態に対して任意の UI を差し込み可能
+### Design philosophy
+- The package provides the authentication logic and the basic button UI, and nothing more
+- The splash screen, the layout of the sign-in screen, and where the terms of use and privacy policy go are entirely the app's to decide
+- The ViewBuilder pattern lets any UI be slotted in for each authentication state
 
 ## [1.1.3] - 2025-11-09
 
-### 修正
-- 自動リリースワークフローのメッセージを完全に日本語に統一（PRディスクリプション、リリースノート、ログメッセージ）
+### Fixed
+- Made the automatic release workflow's messages consistently Japanese (PR description, release notes, log messages)
 
 ## [1.1.2] - 2025-11-04
 
-### 追加
-- DocC ドキュメントの自動生成と GitHub Pages への公開機能を追加
-  - Swift DocC Plugin を依存関係に追加
-  - GitHub Actions ワークフローで自動的にドキュメントを生成・デプロイ
-  - README に完全なドキュメントへのリンクを追加 (https://no-problem-dev.github.io/swift-authentication/documentation/authentication/)
+### Added
+- DocC documentation generated automatically and published to GitHub Pages
+  - Added the Swift DocC Plugin as a dependency
+  - A GitHub Actions workflow generates and deploys the documentation
+  - Added a link to the full documentation in the README (https://no-problem-dev.github.io/swift-authentication/documentation/authentication/)
 
-### 変更
-- ドキュメントへのアクセシビリティを向上
+### Changed
+- The documentation is easier to reach
 
 ## [1.0.3] - 2025-02-11
 
-### 追加
-- README にバックエンド API 前提条件セクションを追加
-  - 必須 POST `/auth/initialize` エンドポイントを文書化
-  - 必須 JSON レスポンス形式を camelCase で明記
-  - Firebase 認証とバックエンド統合の認証フローを説明
-  - Authorization ヘッダーが自動的に Firebase ID トークンで設定されることを明記
+### Added
+- A backend API prerequisites section in the README
+  - Documented the required POST `/auth/initialize` endpoint
+  - Stated the required JSON response format, in camelCase
+  - Explained the authentication flow between Firebase auth and the backend
+  - Noted that the Authorization header is set to the Firebase ID token automatically
 
 ## [1.0.2] - 2025-02-11
 
-### 改善
-- README を簡潔化し、重要な情報のみに絞る
-  - トラブルシューティングセクションを削除（Google Sign-In、トークンリフレッシュ、ビルドエラー）
-  - アーキテクチャセクションを削除（内部実装の詳細）
-  - パッケージ利用者にとって必須の情報のみを保持
+### Improved
+- Shortened the README down to what matters
+  - Removed the troubleshooting section (Google Sign-In, token refresh, build errors)
+  - Removed the architecture section (internal implementation detail)
+  - Kept only what someone using the package needs
 
 ## [1.0.1] - 2025-02-11
 
-### 改善
-- README に包括的なセットアップガイドとバッジを追加
-  - Swift 6.0、プラットフォーム、SPM、Firebase、ライセンスのバッジを追加
-  - 包括的な前提条件セクションを追加（Firebase セットアップ、GoogleService-Info.plist、URL スキーム）
-  - 4 ステップの実装ガイドを含むクイックスタートセクションを追加
-  - 詳細なサインイン画面の実装例を追加
-  - ユーザープロフィールへのアクセスとサインアウトの例を追加
-  - カスタム認証フローの例を追加
-  - FirebaseAuthTokenProvider を使用した API リクエスト統合の例を追加
-  - 一般的な問題のトラブルシューティングセクションを追加
-  - 内部構造の詳細を含むアーキテクチャセクションを拡張
-  - LICENSE ファイルへの参照を追加
+### Improved
+- A comprehensive setup guide and badges in the README
+  - Badges for Swift 6.0, platforms, SPM, Firebase and the licence
+  - A full prerequisites section (Firebase setup, GoogleService-Info.plist, URL schemes)
+  - A quick start section with a four-step implementation guide
+  - A detailed sign-in screen example
+  - Examples of reading the user profile and signing out
+  - A custom authentication flow example
+  - An example of integrating API requests with FirebaseAuthTokenProvider
+  - A troubleshooting section for common problems
+  - An expanded architecture section covering the internals
+  - A reference to the LICENSE file
 
 ## [1.0.0] - 2024-12-XX
 
-### 追加
-- 初回リリース
-- Firebase Authentication 統合
-- Google Sign-In サポート
-- モダンな async/await API
-- SwiftUI Environment Values 対応
-- 認証状態の管理
-- iOS 17.0+ および macOS 14.0+ サポート
+### Added
+- First release
+- Firebase Authentication integration
+- Google Sign-In support
+- A modern async/await API
+- SwiftUI Environment Values support
+- Authentication state management
+- iOS 17.0+ and macOS 14.0+ support
 
-[未リリース]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.9...HEAD
+[Unreleased]: https://github.com/no-problem-dev/swift-authentication/compare/5.2.0...HEAD
+[5.2.0]: https://github.com/no-problem-dev/swift-authentication/compare/5.1.0...5.2.0
+[5.1.0]: https://github.com/no-problem-dev/swift-authentication/compare/5.0.1...5.1.0
 [1.1.9]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.8...v1.1.9
 [1.1.8]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.7...v1.1.8
 [1.1.7]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.6...v1.1.7
