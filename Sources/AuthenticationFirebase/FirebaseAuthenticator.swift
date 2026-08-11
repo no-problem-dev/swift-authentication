@@ -71,12 +71,15 @@ public final class FirebaseAuthenticator: Authenticator, @unchecked Sendable {
     /// listener behaviour and what `AuthenticationStore` relies on to leave its checking
     /// state. The listener is removed when iteration ends.
     public func authStateChanges() -> AsyncStream<AuthUser?> {
-        AsyncStream { continuation in
+        // The listener belongs to the instance it was added to, which is not necessarily the
+        // shared one — reaching for `Auth.auth()` here traps outright when no default app exists.
+        nonisolated(unsafe) let auth = self.auth
+        return AsyncStream { continuation in
             nonisolated(unsafe) let handle = auth.addStateDidChangeListener { _, user in
                 continuation.yield(user.map(FirebaseUserMapper.map))
             }
             continuation.onTermination = { _ in
-                Auth.auth().removeStateDidChangeListener(handle)
+                auth.removeStateDidChangeListener(handle)
             }
         }
     }

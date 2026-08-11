@@ -74,13 +74,40 @@ public enum FirebaseConfigurator {
     /// this is a fresh install.
     private static func signOutOnFirstLaunchIfNeeded() {
         guard FirebaseApp.app() != nil else { return }
+        clearStoredSessionOnFirstLaunch(defaults: .standard) {
+            try Auth.auth().signOut()
+        }
+    }
 
-        let userDefaults = UserDefaults.standard
-        let key = "com.noproblem.authentication.hasLaunchedBefore"
+    /// The user defaults key that records the first launch as handled.
+    static let firstLaunchKey = "com.noproblem.authentication.hasLaunchedBefore"
 
-        if !userDefaults.bool(forKey: key) {
-            try? Auth.auth().signOut()
-            userDefaults.set(true, forKey: key)
+    /// Clears the session left behind by a previous install, and records the launch as handled
+    /// only once that has actually happened.
+    ///
+    /// Signing out writes to the keychain, which can refuse — most plausibly when the app is
+    /// launched in the background before the device has been unlocked since boot. Recording the
+    /// launch anyway would spend the one signal that says this is a fresh install on an attempt
+    /// that failed, and the previous owner's session would then survive every later launch: the
+    /// exact outcome this exists to prevent. So a failure leaves the key unset and the next
+    /// launch tries again.
+    ///
+    /// - Parameters:
+    ///   - defaults: Where the first-launch flag lives. Deleting the app clears it, which is what
+    ///     makes its absence mean "fresh install".
+    ///   - signOut: Clears the stored session. Throwing means the session is still there.
+    static func clearStoredSessionOnFirstLaunch(
+        defaults: UserDefaults,
+        signOut: () throws -> Void
+    ) {
+        guard !defaults.bool(forKey: firstLaunchKey) else { return }
+
+        do {
+            try signOut()
+            defaults.set(true, forKey: firstLaunchKey)
+        } catch {
+            // Deliberately leaves the key unset. The session is still on the device, so this is
+            // still the first launch as far as the next one is concerned.
         }
     }
 }

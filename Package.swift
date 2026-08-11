@@ -96,6 +96,11 @@ let package = Package(
             name: "AuthenticationAPITests",
             dependencies: ["AuthenticationAPI"],
             path: "Tests/AuthenticationAPITests"
+        ),
+        .testTarget(
+            name: "AuthenticationFirebaseTests",
+            dependencies: ["AuthenticationFirebase", "Authentication"],
+            path: "Tests/AuthenticationFirebaseTests"
         )
     ]
 )
