@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-08-11
+
 ### Added
 
 - **BREAKING** — `AuthError.sessionExpired(_:)` and `.notPermitted(_:)`, with the matching

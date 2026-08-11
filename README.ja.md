@@ -154,7 +154,7 @@ Firebase ID トークンが `Authorization: Bearer` で自動付与される。�
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "5.0.0")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "6.0.0")
 ]
 ```
 
