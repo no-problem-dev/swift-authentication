@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [7.0.0] - 2026-08-11
+
 ### Changed
 
 - Every string this package renders or throws is now English. Nothing stops compiling, but the text
