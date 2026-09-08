@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [8.0.0] - 2026-09-08
+
 ### Changed
 
 - `swift-api-client` の要求を `from: "6.0.0"` に上げた。6.0.0 は本文の無い応答
