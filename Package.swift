@@ -22,7 +22,7 @@ let package = Package(
         .library(name: "AuthenticationAPI", targets: ["AuthenticationAPI"])
     ],
     dependencies: [
-        .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "5.0.0"),
+        .package(url: "https://github.com/no-problem-dev/swift-api-client.git", from: "6.0.0"),
         // api-client 3.0.3 stopped re-exporting APIContract, so the contract types this package
         // declares in its own public API have to be depended on directly.
         .package(url: "https://github.com/no-problem-dev/swift-api-contract.git", from: "2.0.0"),

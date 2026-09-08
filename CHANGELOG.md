@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `swift-api-client` の要求を `from: "6.0.0"` に上げた。6.0.0 は本文の無い応答
+  （204 など）でデコードを走らせなくなった破壊的変更で、この版を要求するアプリは
+  **7.0.0 の `5.0.0..<6.0.0` と両立できず、依存の解決そのものが失敗する**。
+  この package 自身は 6.0.0 でそのまま建つ（`APIUserProvisioning` の `catch` は
+  `default: throw error` を持つので網羅していない）ことを実際にビルドして確かめた。
+
 ## [7.0.0] - 2026-08-11
 
 ### Changed
