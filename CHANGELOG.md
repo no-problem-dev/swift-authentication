@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [8.1.0] - 2026-09-27
+
 ### Added
 
 - `AuthCredential.authorizationCode`: the authorization code Apple returns with each
