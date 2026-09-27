@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `AuthCredential.authorizationCode`: the authorization code Apple returns with each
+  authorization, which `AppleCredentialProvider` now fills in (it used to discard it). Revoking
+  a user's Sign in with Apple tokens on account deletion — required by App Review guideline
+  5.1.1(v) — needs it. `nil` for every other provider. Added through a new
+  `AuthCredential.init(provider:idToken:accessToken:rawNonce:fullName:authorizationCode:)` and
+  `AuthCredential.apple(idToken:rawNonce:fullName:authorizationCode:)` rather than one more
+  defaulted parameter, so the existing initializer and factory keep their exact signatures.
+- `FirebaseAuthenticator.revokeAppleToken(authorizationCode:)`, wrapping
+  `Auth.revokeToken(withAuthorizationCode:)`. Call it before `deleteAccount()` with the code
+  from a fresh Apple authorization — the code is single use and lives about five minutes. It
+  throws `AuthError.notAuthenticated` when no one is signed in, where Firebase itself would
+  never call back.
+
 ## [8.0.0] - 2026-09-08
 
 ### Changed

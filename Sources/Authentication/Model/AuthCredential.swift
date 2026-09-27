@@ -35,6 +35,16 @@ public struct AuthCredential: Sendable, Equatable {
     /// leaves it `nil`, and there is no way to ask for it again.
     public let fullName: PersonName?
 
+    /// The short-lived authorization code Apple returns alongside the identity token.
+    ///
+    /// Signing in does not need it. It exists for revoking the user's Sign in with Apple
+    /// tokens when they delete their account, which App Review requires (guideline
+    /// 5.1.1(v)); with Firebase that is `FirebaseAuthenticator.revokeAppleToken(authorizationCode:)`.
+    /// Apple lets the code be redeemed once and only for about five minutes, so obtain a fresh
+    /// one immediately before deleting rather than keeping the one from sign-in. `nil` outside
+    /// the Apple flow, and when Apple did not supply one.
+    public let authorizationCode: String?
+
     public init(
         provider: AuthProviderID,
         idToken: String? = nil,
@@ -47,6 +57,27 @@ public struct AuthCredential: Sendable, Equatable {
         self.accessToken = accessToken
         self.rawNonce = rawNonce
         self.fullName = fullName
+        self.authorizationCode = nil
+    }
+
+    /// Creates a credential that also carries an Apple authorization code.
+    ///
+    /// A separate initializer rather than one more defaulted parameter on the one above, so
+    /// that initializer keeps its exact signature and existing callers are unaffected.
+    public init(
+        provider: AuthProviderID,
+        idToken: String? = nil,
+        accessToken: String? = nil,
+        rawNonce: String? = nil,
+        fullName: PersonName? = nil,
+        authorizationCode: String?
+    ) {
+        self.provider = provider
+        self.idToken = idToken
+        self.accessToken = accessToken
+        self.rawNonce = rawNonce
+        self.fullName = fullName
+        self.authorizationCode = authorizationCode
     }
 
     /// A credential that asks for an anonymous session and carries no tokens.

@@ -48,6 +48,14 @@ let store = AuthenticationStore(authenticator: authenticator)
 so the composition root can hand it to `GoogleCredentialProvider` without importing
 FirebaseCore itself.
 
+### Deleting an account that used Sign in with Apple
+
+App Review requires revoking the user's Apple tokens when such an account is deleted
+(guideline 5.1.1(v)). Call ``FirebaseAuthenticator/revokeAppleToken(authorizationCode:)`` with
+the `authorizationCode` of a fresh Apple authorization, then
+``FirebaseAuthenticator/deleteAccount()`` — in that order, since the revocation is authorized
+with the current user's ID token.
+
 ## Topics
 
 ### Start-up
@@ -58,6 +66,7 @@ FirebaseCore itself.
 ### Session exchange
 
 - ``FirebaseAuthenticator``
+- ``FirebaseAuthenticator/revokeAppleToken(authorizationCode:)``
 
 ### Tokens
 

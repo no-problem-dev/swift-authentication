@@ -140,6 +140,20 @@ Firebase ID トークンが `Authorization: Bearer` で自動付与される。�
 **認証セッション中に 1 回だけ** 呼ぶが、再試行や再インストールでサーバは複数回受け取るため、
 エンドポイント側も冪等にすること。プロビジョニング不要なら `postAuthentication` を省略できる。
 
+### Sign in with Apple を使ったアカウントの削除
+
+App Review ガイドライン 5.1.1(v) は、アカウント削除時に Apple のトークンを失効させることを求める。
+`AppleCredentialProvider` が返す資格情報は Apple の `authorizationCode` を持つ。これは 1 回限りで
+約 5 分で切れるので、削除の直前に改めて認可し、失効させてから削除する:
+
+```swift
+let fresh = try await AppleCredentialProvider().acquireCredential()
+if let code = fresh.authorizationCode {
+    try await firebaseAuthenticator.revokeAppleToken(authorizationCode: code)
+}
+try await firebaseAuthenticator.deleteAccount()
+```
+
 ### 独自プロバイダ
 
 `AuthProviderID` は拡張可能で、`CredentialProvider` / `Authenticator` /

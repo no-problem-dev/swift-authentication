@@ -36,6 +36,22 @@ let credential = AuthCredential.apple(
 )
 ```
 
+### Revoking tokens on account deletion
+
+An app that offers Sign in with Apple must revoke the user's Apple tokens when the account is
+deleted (App Review guideline 5.1.1(v)). That takes the authorization code Apple returns with
+each authorization, which the credential carries as `authorizationCode`. The code is single use
+and expires after about five minutes, so authorize again right before deleting instead of
+keeping the one from sign-in:
+
+```swift
+let fresh = try await AppleCredentialProvider().acquireCredential()
+if let code = fresh.authorizationCode {
+    try await authenticator.revokeAppleToken(authorizationCode: code)   // FirebaseAuthenticator
+}
+try await authenticator.deleteAccount()
+```
+
 ## Topics
 
 ### Credential provider
@@ -45,3 +61,4 @@ let credential = AuthCredential.apple(
 ### Factory
 
 - ``Authentication/AuthCredential/apple(idToken:rawNonce:fullName:)``
+- ``Authentication/AuthCredential/apple(idToken:rawNonce:fullName:authorizationCode:)``

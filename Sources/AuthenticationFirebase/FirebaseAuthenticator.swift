@@ -65,6 +65,25 @@ public final class FirebaseAuthenticator: Authenticator, @unchecked Sendable {
         try await user.delete()
     }
 
+    /// Revokes the signed-in user's Sign in with Apple tokens, as App Review requires when an
+    /// account that used Sign in with Apple is deleted (guideline 5.1.1(v)).
+    ///
+    /// Call it **before** ``deleteAccount()``: Firebase authorizes the revocation with the
+    /// current user's ID token, which no longer exists once the account is gone. Get the code
+    /// from a fresh Apple authorization — `AppleCredentialProvider().acquireCredential()` and
+    /// its `authorizationCode` — because Apple accepts each code once and only for about five
+    /// minutes, so the one from the original sign-in is long spent.
+    ///
+    /// - Parameter authorizationCode: The authorization code from that Apple authorization.
+    /// - Throws: `AuthError.notAuthenticated` when no one is signed in (Firebase would
+    ///   otherwise never complete the request), or Firebase's error when the revocation fails.
+    public func revokeAppleToken(authorizationCode: String) async throws {
+        guard auth.currentUser != nil else {
+            throw AuthError.notAuthenticated
+        }
+        try await auth.revokeToken(withAuthorizationCode: authorizationCode)
+    }
+
     /// A stream of the signed-in user, emitting `nil` while signed out.
     ///
     /// The current value arrives as soon as the stream is iterated, which is Firebase's

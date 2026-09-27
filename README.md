@@ -134,6 +134,18 @@ Only `.authenticated` means the account is ready: while provisioning is pending 
 
 `APIUserProvisioning` calls `POST <path>` (default `/auth/initialize`) once the session exists, with the Firebase ID token attached as `Authorization: Bearer`. The store calls it **once per authentication session**, but retries and reinstalls mean the endpoint has to be idempotent on the server too. Omit `postAuthentication` when there is nothing to provision.
 
+### Deleting an account that used Sign in with Apple
+
+App Review guideline 5.1.1(v) requires revoking the user's Apple tokens on account deletion. The credential from `AppleCredentialProvider` carries Apple's `authorizationCode`; it is single use and expires in about five minutes, so authorize again right before deleting, revoke, then delete:
+
+```swift
+let fresh = try await AppleCredentialProvider().acquireCredential()
+if let code = fresh.authorizationCode {
+    try await firebaseAuthenticator.revokeAppleToken(authorizationCode: code)
+}
+try await firebaseAuthenticator.deleteAccount()
+```
+
 ### Custom providers
 
 `AuthProviderID` is open-ended. Implement `CredentialProvider` / `Authenticator` / `PostAuthenticationAction` to plug in any backend — direct Firestore access, custom OIDC, anything else.

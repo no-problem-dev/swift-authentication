@@ -77,19 +77,18 @@ extension AppleAuthorizationDriver: ASAuthorizationControllerDelegate {
         MainActor.assumeIsolated {
             guard
                 let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
-                let tokenData = credential.identityToken,
-                let idToken = String(data: tokenData, encoding: .utf8)
+                let credentialValue = AppleCredentialMapper.credential(
+                    identityToken: credential.identityToken,
+                    authorizationCode: credential.authorizationCode,
+                    rawNonce: rawNonce,
+                    fullName: credential.fullName
+                )
             else {
                 finish(.failure(AuthError.credentialAcquisitionFailed(
                     AppleAuthorizationError.missingIdentityToken
                 )))
                 return
             }
-            let credentialValue = AuthCredential.apple(
-                idToken: idToken,
-                rawNonce: rawNonce,
-                fullName: PersonName(components: credential.fullName)
-            )
             finish(.success(credentialValue))
         }
     }
