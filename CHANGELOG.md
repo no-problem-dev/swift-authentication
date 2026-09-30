@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.0.0] - 2026-09-30
+
 Four fixes that each change a public protocol or enum, released together as one major so
 consumers migrate once.
 

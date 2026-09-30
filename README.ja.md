@@ -198,7 +198,7 @@ try await firebaseAuthenticator.deleteAccount()
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "8.0.0")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "9.0.0")
 ]
 ```
 
