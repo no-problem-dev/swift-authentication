@@ -25,6 +25,14 @@ let store = AuthenticationStore(
 // Sign in by provider identifier.
 try await store.signIn(using: .apple)
 
+// Upgrade an anonymous account, keeping its user id.
+do {
+    try await store.link(using: .apple)
+} catch AuthError.credentialAlreadyInUse(let collision) {
+    // Another account owns the credential. Switching to it changes the user id.
+    try await store.signIn(resolving: collision)
+}
+
 // Sign out.
 try await store.signOut()
 ```
@@ -63,6 +71,7 @@ and keeps its domain layer depending on `Authentication` only.
 - ``CredentialProvider``
 - ``PostAuthenticationAction``
 - ``AuthTokenProviding``
+- ``AccountDeletion``
 
 ### State and the user
 
@@ -83,3 +92,4 @@ and keeps its domain layer depending on `Authentication` only.
 ### Errors
 
 - ``AuthError``
+- ``CredentialCollision``

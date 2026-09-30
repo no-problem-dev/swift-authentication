@@ -92,6 +92,90 @@ public final class AuthenticationStore {
         }
     }
 
+    // MARK: - Link
+
+    /// Runs a registered provider's sign-in UI and links what it returns to the signed-in
+    /// account, keeping its user id.
+    ///
+    /// The way to upgrade an anonymous account without losing what it holds.
+    ///
+    /// - Parameter providerID: Which registered provider to use.
+    /// - Throws: ``AuthError/unsupportedProvider(_:)``, ``AuthError/cancelled`` and
+    ///   ``AuthError/credentialAcquisitionFailed(_:)`` as for ``signIn(using:)``, then whatever
+    ///   ``link(with:)`` throws.
+    public func link(using providerID: AuthProviderID) async throws {
+        guard let provider = credentialProviders[providerID] else {
+            throw AuthError.unsupportedProvider(providerID)
+        }
+        let credential = try await acquireCredential(from: provider)
+        try await link(with: credential)
+    }
+
+    /// Links a credential you already hold to the signed-in account, keeping its user id.
+    ///
+    /// ``state`` never becomes an error here: a failed link leaves the session exactly as it
+    /// was. A successful one republishes the user, whose ``AuthUser/isAnonymous`` and
+    /// ``AuthUser/providerIDs`` have changed — linking starts no new session, so the
+    /// authenticator's stream has nothing to report.
+    ///
+    /// - Parameter credential: A provider credential.
+    /// - Throws: ``AuthError/credentialAlreadyInUse(_:)`` when another account already owns
+    ///   the credential — pass its payload to ``signIn(resolving:)`` if the person chooses to
+    ///   switch to that account. ``AuthError/notAuthenticated`` when nobody is signed in, and
+    ///   ``AuthError/linkFailed(_:)`` for anything else.
+    public func link(with credential: AuthCredential) async throws {
+        let linked: AuthUser
+        do {
+            linked = try await authenticator.link(with: credential)
+        } catch let error as AuthError {
+            throw error
+        } catch {
+            throw AuthError.linkFailed(error)
+        }
+        if case .authenticated(let current) = state, current.id == linked.id {
+            state = .authenticated(linked)
+        }
+    }
+
+    /// Signs in to the account that owns a credential which failed to link.
+    ///
+    /// Uses the replacement credential the server issued with the rejection. When there is
+    /// none, it runs the provider's sign-in UI again for a fresh one — the credential that
+    /// collided is never exchanged a second time, because an Apple identity token's nonce is
+    /// spent by the attempted link.
+    ///
+    /// The user id changes to the owning account's; what the previous account held stays with
+    /// it. ``state`` follows through the authenticator's stream, as for ``signIn(with:)``. A
+    /// failure leaves the current session and ``state`` as they were.
+    ///
+    /// - Parameter collision: The payload of ``AuthError/credentialAlreadyInUse(_:)``.
+    /// - Throws: ``AuthError/unsupportedProvider(_:)`` when a fresh credential is needed and no
+    ///   provider is registered for ``CredentialCollision/provider``, ``AuthError/cancelled``
+    ///   when the person backs out of the provider's sheet, and
+    ///   ``AuthError/sessionExchangeFailed(_:)`` when the exchange fails.
+    public func signIn(resolving collision: CredentialCollision) async throws {
+        do {
+            _ = try await authenticator.signIn(resolving: collision)
+            return
+        } catch AuthError.credentialAlreadyInUse {
+            // No replacement this authenticator can use: fall through to a fresh credential.
+        } catch {
+            throw AuthError.sessionExchangeFailed(error)
+        }
+
+        guard let provider = credentialProviders[collision.provider] else {
+            throw AuthError.unsupportedProvider(collision.provider)
+        }
+        let fresh = try await acquireCredential(from: provider)
+        do {
+            _ = try await authenticator.signIn(with: fresh)
+        } catch {
+            throw AuthError.sessionExchangeFailed(error)
+        }
+    }
+
+    // MARK: - Sign out and delete
+
     /// Ends the session.
     ///
     /// ``state`` is not touched here; it follows once the authenticator reports the user as
@@ -108,6 +192,9 @@ public final class AuthenticationStore {
     }
 
     /// Deletes the signed-in account. Irreversible.
+    ///
+    /// The authenticator ends the session once the account is gone, and ``state`` follows
+    /// through its stream.
     ///
     /// - Throws: ``AuthError/deleteAccountFailed(_:)``. Everything the authenticator raised
     ///   arrives wrapped in that case, including ``AuthError/notAuthenticated`` when there was

@@ -57,13 +57,15 @@ struct MyApp: App {
     init() {
         FirebaseConfigurator.configure()   // Production. Use .configure(environment: .emulator()) for local dev.
 
-        let apiClient = APIClient(
+        let apiClient = APIClientImpl(
             baseURL: URL(string: "https://api.example.com")!,
             authTokenProvider: APITokenProviderAdapter(FirebaseTokenProvider())
         )
 
         _store = State(initialValue: AuthenticationStore(
-            authenticator: FirebaseAuthenticator(),
+            authenticator: FirebaseAuthenticator(
+                accountDeletion: APIAccountDeletion(apiClient: apiClient, path: "/v1/me")
+            ),
             postAuthentication: APIUserProvisioning(apiClient: apiClient),
             credentialProviders: [
                 AppleCredentialProvider(),
@@ -133,6 +135,34 @@ Only `.authenticated` means the account is ready: while provisioning is pending 
 ### Post-authentication provisioning (optional)
 
 `APIUserProvisioning` calls `POST <path>` (default `/auth/initialize`) once the session exists, with the Firebase ID token attached as `Authorization: Bearer`. The store calls it **once per authentication session**, but retries and reinstalls mean the endpoint has to be idempotent on the server too. Omit `postAuthentication` when there is nothing to provision.
+
+### Upgrading an anonymous account
+
+`signIn` replaces the session, so an anonymous user who signs in with Apple gets a new user id and leaves the anonymous account's data behind. `link` attaches the credential to the account in hand and keeps the id:
+
+```swift
+do {
+    try await store.link(using: .apple)
+} catch AuthError.credentialAlreadyInUse(let collision) {
+    // The person already has an account with this provider (typically from another device).
+    // Switching to it changes the user id; ask before doing so.
+    try await store.signIn(resolving: collision)
+}
+```
+
+Never exchange the credential that collided a second time: the nonce inside an Apple identity token is spent by the link, and Firebase answers "Duplicate credential received". `signIn(resolving:)` uses the replacement credential Firebase returned with the error and, when there is none, runs the provider's sheet again for a fresh one. Code that talks to Firebase directly can convert this package's credentials with `FirebaseCredentialMapper.makeCredential(from:)` rather than keeping its own copy.
+
+### Deleting the account through your server
+
+Deleting the Firebase account from the device is refused when the last sign-in is too old (`requiresRecentLogin`), and when the app first deletes its server data that refusal arrives after the data is gone. Give `FirebaseAuthenticator` an `AccountDeletion` — `APIAccountDeletion` sends `DELETE <path>` through swift-api-client — and `deleteAccount()` calls the server, then clears the local session only once the server succeeded. Without one, the account is deleted from the device as before. Either way, `deleteAccount()` now ends the local session itself.
+
+### Forcing a token refresh
+
+`AuthTokenProviding.token(forceRefresh:)` fetches a new token even when the cached one has not expired — what to do after a 401. A transport that takes a token closure gets one from `tokenSource`:
+
+```swift
+let token: @Sendable (_ forceRefresh: Bool) async throws -> String = FirebaseTokenProvider().tokenSource
+```
 
 ### Deleting an account that used Sign in with Apple
 

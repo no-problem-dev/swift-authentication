@@ -7,40 +7,104 @@ import Authentication
 /// Converts the neutral `AuthCredential` into Firebase's own credential type and trades it
 /// for a session. Firebase stores that session in the keychain, which outlives the process and
 /// even the app's deletion — see `FirebaseConfigurator` for why that matters on reinstall.
-public final class FirebaseAuthenticator: Authenticator, @unchecked Sendable {
-    private let auth: Auth
+public final class FirebaseAuthenticator: Authenticator, Sendable {
+    private let backend: any FirebaseAuthBackend
+    private let accountDeletion: (any AccountDeletion)?
 
     /// Creates an authenticator.
     ///
-    /// - Parameter auth: The Firebase authentication instance to use. Defaults to the shared
-    ///   one; pass another only to substitute it in tests.
-    public init(auth: Auth = Auth.auth()) {
-        self.auth = auth
+    /// - Parameters:
+    ///   - auth: The Firebase authentication instance to use. Defaults to the shared one; pass
+    ///     another only to substitute it in tests.
+    ///   - accountDeletion: Where ``deleteAccount()`` deletes the account. `nil`, the default,
+    ///     deletes the Firebase account from the device, which Firebase refuses when the last
+    ///     sign-in is too old and which leaves the app's own server data alone. An app with a
+    ///     server passes its deletion endpoint here — `APIAccountDeletion` from
+    ///     `AuthenticationAPI` — so the server deletes the data and the account in one request.
+    public convenience init(auth: Auth = Auth.auth(), accountDeletion: (any AccountDeletion)? = nil) {
+        self.init(backend: LiveFirebaseAuthBackend(auth: auth), accountDeletion: accountDeletion)
+    }
+
+    init(backend: any FirebaseAuthBackend, accountDeletion: (any AccountDeletion)? = nil) {
+        self.backend = backend
+        self.accountDeletion = accountDeletion
     }
 
     /// Returns the user restored from the keychain-backed session, or `nil` when there is
     /// none. Reads local state only — no network call, no token refresh.
     public func currentUser() async -> AuthUser? {
-        auth.currentUser.map(FirebaseUserMapper.map)
+        backend.currentUser()
     }
 
     /// Trades a credential for a Firebase session and returns the user it belongs to.
     ///
     /// An anonymous credential carries no tokens, so it opens an anonymous session instead of
-    /// being exchanged.
+    /// being exchanged. Any other credential replaces the current session — an anonymous one
+    /// included, whose user id and data are then left behind. Use ``link(with:)`` to keep them.
     ///
     /// - Parameter credential: What the acquisition layer produced.
     /// - Returns: The signed-in user.
-    /// - Throws: Firebase's authentication error, or a mapping error when the credential is
-    ///   missing the fields its provider requires.
+    /// - Throws: Firebase's authentication error, or ``FirebaseAuthenticatorError`` when the
+    ///   credential is missing the fields its provider requires.
     public func signIn(with credential: Authentication.AuthCredential) async throws -> AuthUser {
-        let result: AuthDataResult
         if let firebaseCredential = try FirebaseCredentialMapper.makeCredential(from: credential) {
-            result = try await auth.signIn(with: firebaseCredential)
-        } else {
-            result = try await auth.signInAnonymously()
+            return try await backend.signIn(with: firebaseCredential)
         }
-        return FirebaseUserMapper.map(result.user)
+        return try await backend.signInAnonymously()
+    }
+
+    /// Links a credential to the signed-in Firebase user, keeping its uid.
+    ///
+    /// - Parameter credential: An Apple or Google credential.
+    /// - Returns: The same user, now linked to the credential's provider.
+    /// - Throws: `AuthError.notAuthenticated` when nobody is signed in.
+    ///   `AuthError.credentialAlreadyInUse` when another Firebase account already owns the
+    ///   credential; its payload carries the replacement credential Firebase issued, which
+    ///   ``signIn(resolving:)`` uses. `AuthError.linkFailed` for everything else, including a
+    ///   credential that cannot be converted and a provider already linked to this user.
+    public func link(with credential: Authentication.AuthCredential) async throws -> AuthUser {
+        let firebaseCredential: FirebaseAuth.AuthCredential
+        do {
+            guard let converted = try FirebaseCredentialMapper.makeCredential(from: credential) else {
+                throw FirebaseAuthenticatorError.invalidCredential(credential.provider)
+            }
+            firebaseCredential = converted
+        } catch {
+            throw AuthError.linkFailed(error)
+        }
+
+        let linked: AuthUser?
+        do {
+            linked = try await backend.linkCurrentUser(with: firebaseCredential)
+        } catch let error as NSError
+            where error.domain == AuthErrors.domain
+            && error.code == AuthErrorCode.credentialAlreadyInUse.rawValue {
+            throw AuthError.credentialAlreadyInUse(Self.collision(from: error, provider: credential.provider))
+        } catch {
+            throw AuthError.linkFailed(error)
+        }
+        guard let linked else { throw AuthError.notAuthenticated }
+        return linked
+    }
+
+    /// Signs in to the Firebase account that owns a credential which failed to link, using the
+    /// replacement credential Firebase issued with the rejection.
+    ///
+    /// The credential passed to ``link(with:)`` is never reused: Firebase has already consumed
+    /// the nonce inside an Apple identity token, so a second exchange fails with "Duplicate
+    /// credential received".
+    ///
+    /// - Parameter collision: The payload of the `AuthError.credentialAlreadyInUse` that
+    ///   ``link(with:)`` threw.
+    /// - Returns: The user of the owning account. The uid changes to that account's.
+    /// - Throws: `AuthError.credentialAlreadyInUse(collision)` unchanged when Firebase issued no
+    ///   replacement — a fresh credential from the provider is needed — and Firebase's error
+    ///   when the exchange fails.
+    public func signIn(resolving collision: CredentialCollision) async throws -> AuthUser {
+        guard let renewed = collision.renewedCredential as? FirebaseRenewedCredential else {
+            throw AuthError.credentialAlreadyInUse(collision)
+        }
+        return try await backend.signIn(with: renewed.credential)
     }
 
     /// Clears the keychain-backed session.
@@ -50,19 +114,35 @@ public final class FirebaseAuthenticator: Authenticator, @unchecked Sendable {
     ///
     /// - Throws: Firebase's sign-out error.
     public func signOut() async throws {
-        try auth.signOut()
+        try backend.signOut()
     }
 
-    /// Deletes the Firebase account itself, not just the local session. Irreversible.
+    /// Deletes the account, then ends the local session. Irreversible.
     ///
-    /// - Throws: `AuthError.notAuthenticated` when no one is signed in. Firebase refuses
-    ///   outright when the last sign-in is too old, and that refusal is thrown as-is — recover
-    ///   by signing the user in again and retrying.
+    /// With an `accountDeletion` given at init, that does the deleting — normally the app's
+    /// server, removing its data and the Firebase account in one request — and the session is
+    /// cleared only after it succeeds, so a failed request can be retried with the same bearer
+    /// token. Without one, the Firebase account is deleted from the device.
+    ///
+    /// - Throws: `AuthError.notAuthenticated` when no one is signed in; whatever the
+    ///   `accountDeletion` threw, with the session untouched; on the device path, Firebase's
+    ///   refusal when the last sign-in is too old (`requiresRecentLogin`), thrown as-is.
+    ///   `AuthError.signOutFailed` when the account is gone but the local session could not be
+    ///   cleared.
     public func deleteAccount() async throws {
-        guard let user = auth.currentUser else {
+        guard let user = backend.currentUser() else {
             throw AuthError.notAuthenticated
         }
-        try await user.delete()
+        if let accountDeletion {
+            try await accountDeletion.deleteAccount(of: user)
+        } else {
+            try await backend.deleteCurrentUser()
+        }
+        do {
+            try backend.signOut()
+        } catch {
+            throw AuthError.signOutFailed(error)
+        }
     }
 
     /// Revokes the signed-in user's Sign in with Apple tokens, as App Review requires when an
@@ -78,10 +158,10 @@ public final class FirebaseAuthenticator: Authenticator, @unchecked Sendable {
     /// - Throws: `AuthError.notAuthenticated` when no one is signed in (Firebase would
     ///   otherwise never complete the request), or Firebase's error when the revocation fails.
     public func revokeAppleToken(authorizationCode: String) async throws {
-        guard auth.currentUser != nil else {
+        guard backend.currentUser() != nil else {
             throw AuthError.notAuthenticated
         }
-        try await auth.revokeToken(withAuthorizationCode: authorizationCode)
+        try await backend.revokeToken(authorizationCode: authorizationCode)
     }
 
     /// A stream of the signed-in user, emitting `nil` while signed out.
@@ -90,16 +170,17 @@ public final class FirebaseAuthenticator: Authenticator, @unchecked Sendable {
     /// listener behaviour and what `AuthenticationStore` relies on to leave its checking
     /// state. The listener is removed when iteration ends.
     public func authStateChanges() -> AsyncStream<AuthUser?> {
-        // The listener belongs to the instance it was added to, which is not necessarily the
-        // shared one — reaching for `Auth.auth()` here traps outright when no default app exists.
-        nonisolated(unsafe) let auth = self.auth
-        return AsyncStream { continuation in
-            nonisolated(unsafe) let handle = auth.addStateDidChangeListener { _, user in
-                continuation.yield(user.map(FirebaseUserMapper.map))
-            }
-            continuation.onTermination = { _ in
-                auth.removeStateDidChangeListener(handle)
-            }
-        }
+        backend.stateChanges()
+    }
+
+    // MARK: - Internals
+
+    private static func collision(from error: NSError, provider: Authentication.AuthProviderID) -> CredentialCollision {
+        let renewed = error.userInfo[AuthErrors.userInfoUpdatedCredentialKey] as? FirebaseAuth.AuthCredential
+        return CredentialCollision(
+            provider: provider,
+            email: error.userInfo[AuthErrors.userInfoEmailKey] as? String,
+            renewedCredential: renewed.map(FirebaseRenewedCredential.init)
+        )
     }
 }

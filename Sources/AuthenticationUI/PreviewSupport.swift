@@ -35,6 +35,14 @@ final class PreviewStubAuthenticator: Authenticator, @unchecked Sendable {
         initial ?? AuthUser(id: "preview-user")
     }
 
+    func link(with credential: AuthCredential) async throws -> AuthUser {
+        initial ?? AuthUser(id: "preview-user")
+    }
+
+    func signIn(resolving collision: CredentialCollision) async throws -> AuthUser {
+        initial ?? AuthUser(id: "preview-user")
+    }
+
     func signOut() async throws {}
     func deleteAccount() async throws {}
 

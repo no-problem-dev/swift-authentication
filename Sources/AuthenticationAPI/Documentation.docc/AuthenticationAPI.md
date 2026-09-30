@@ -4,7 +4,7 @@ Post-sign-in provisioning over REST, and the adapter that gives an API client it
 
 ## Overview
 
-`AuthenticationAPI` is the seam between this package and swift-api-client. It does two things.
+`AuthenticationAPI` is the seam between this package and swift-api-client. It does three things.
 
 **1. Provisioning the user after sign-in**
 
@@ -45,12 +45,30 @@ let adapter = APITokenProviderAdapter(tokenProvider)
 // Hand the adapter to the API client's initializer.
 ```
 
+**3. Deleting the account on the server**
+
+``APIAccountDeletion`` conforms to `AccountDeletion` and sends `DELETE <path>`. Hand it to
+`FirebaseAuthenticator(accountDeletion:)`; the server then deletes the data and the
+authentication account in one request, and the device clears its session only after that
+succeeded.
+
+```swift
+let authenticator = FirebaseAuthenticator(
+    accountDeletion: APIAccountDeletion(apiClient: myAPIClient, path: "/v1/me")
+)
+```
+
 ## Topics
 
 ### Provisioning
 
 - ``APIUserProvisioning``
 - ``UserProvisioningContract``
+
+### Account deletion
+
+- ``APIAccountDeletion``
+- ``AccountDeletionContract``
 
 ### Token adapter
 

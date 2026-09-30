@@ -7,6 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Four fixes that each change a public protocol or enum, released together as one major so
+consumers migrate once.
+
+### Added
+
+- **Linking an anonymous account.** `Authenticator.link(with:)` attaches an Apple or Google
+  credential to the signed-in account and keeps its user id; `signIn(with:)` replaces the
+  session and strands whatever the anonymous account held. `AuthenticationStore` gains
+  `link(using:)` and `link(with:)`. A failed link never touches `state` — the session is as it
+  was — and a successful one republishes the user with its new `isAnonymous` / `providerIDs`,
+  since linking starts no new session and Firebase's listener stays silent.
+- **Collisions as a type.** When another account already owns the credential, `link` throws
+  `AuthError.credentialAlreadyInUse(CredentialCollision)`. The payload names the provider, the
+  owning account's email when Firebase reports it, and the replacement credential Firebase
+  issued with the error. `Authenticator.signIn(resolving:)` and
+  `AuthenticationStore.signIn(resolving:)` switch to the owning account **without exchanging
+  the credential that collided**: an Apple identity token's nonce is spent by the link, so a
+  second exchange fails with "Duplicate credential received" (Google tokens survive reuse,
+  which is why reusing them looks fine until an Apple user tries). The store uses Firebase's
+  replacement and, when there is none, runs the provider's sheet again for a fresh credential.
+  `AuthError.linkFailed(_:)` covers every other link failure.
+- **Forcing a token refresh.** `AuthTokenProviding.token(forceRefresh:)`, implemented by
+  `FirebaseTokenProvider` with `getIDToken(forcingRefresh:)`. For callers that retry after a
+  401, which previously could only get the same cached token back. Two conveniences:
+  `requiredToken(forceRefresh:)` throws `AuthError.notAuthenticated` instead of returning
+  `nil`, and `tokenSource` is the provider as a
+  `@Sendable (_ forceRefresh: Bool) async throws -> String` closure, the shape a transport that
+  takes a token closure expects.
+- **Deleting through the server.** `AccountDeletion` (core) and `FirebaseAuthenticator(auth:accountDeletion:)`.
+  With one given, `deleteAccount()` calls it and clears the local session only after it
+  succeeded, so a failed request can be retried with the bearer still in hand. Deleting the
+  Firebase account from the device is refused when the last sign-in is too old
+  (`requiresRecentLogin`), and an app that first deletes its server data meets that refusal
+  after the data is already gone; one server request that deletes the data and then the
+  account has neither problem. `AuthenticationAPI` ships `APIAccountDeletion` (a `DELETE`
+  through swift-api-client, naming 401 and 403 the way `APIUserProvisioning` does) and its
+  `AccountDeletionContract`.
+- `FirebaseCredentialMapper` and `FirebaseAuthenticatorError` are public, so code that calls
+  Firebase directly (reauthentication, say) converts this package's credentials instead of
+  keeping a copy of the conversion.
+
+### Changed
+
+- **BREAKING** — `AuthTokenProviding`'s requirement is `token(forceRefresh:)`, with no default
+  implementation. `token()` remains as an extension calling `token(forceRefresh: false)`, so
+  call sites compile unchanged; conformances do not. A default that ignored `forceRefresh`
+  would hand a 401 retry the very token the server just rejected.
+- **BREAKING** — `Authenticator` requires `link(with:)` and `signIn(resolving:)`.
+- **BREAKING** — `AuthError` has two more cases, `credentialAlreadyInUse` and `linkFailed`,
+  and `AuthError.Code` the matching two. Source-breaking for an exhaustive `switch`.
+- `FirebaseAuthenticator.deleteAccount()` signs out after the deletion succeeds, on both paths.
+  On the device path Firebase already dropped the deleted user, so nothing visible changes
+  there; on the server path it is what ends the session. A sign-out that fails after the
+  account is gone throws `AuthError.signOutFailed`, so the caller can tell "the account still
+  exists" from "the account is gone but a session is left on the device".
+- `FirebaseAuthenticator` is checked `Sendable` rather than `@unchecked Sendable`; its calls
+  into Firebase go through an internal seam, which is what lets its sign-in, link and delete
+  paths be tested without a network.
+
+### Fixed
+
+- The README's composition-root example called `APIClient(baseURL:…)`, which no longer exists;
+  it is `APIClientImpl(baseURL:…)`.
+
+### Migration
+
+Every consumer: a type conforming to `AuthTokenProviding` renames `token()` to
+`token(forceRefresh:)` and must actually refresh when asked; a type conforming to
+`Authenticator` (test mocks included) adds `link(with:)` and `signIn(resolving:)`; an
+exhaustive `switch` over `AuthError` or `AuthError.Code` adds the two new cases. Nothing else
+stops compiling. The apps in this workspace, as of this release:
+
+- **stock-radar** (requires `from: "5.0.1"` / `"5.2.0"`, resolves 5.2.0). Is three majors
+  behind, so 6.0.0–8.0.0 apply as well, and its `swift-api-client from: "3.0.0"` cannot be
+  resolved together with the 6.x this package has required since 8.0.0 — raise that first. Then
+  two test doubles in `InfrastructureTests/AuthTests.swift`: `MockAuthenticator` needs
+  `link(with:)` and `signIn(resolving:)`, and `MockTokenProvider` needs
+  `token(forceRefresh:)`. `AuthenticationGateway` can drop its own `link(with:)`,
+  `CredentialCollision`, `signIn(after:)` and credential conversion in favour of
+  `FirebaseAuthenticator.link(with:)` / `signIn(resolving:)` / `FirebaseCredentialMapper`;
+  where Firebase returns no replacement, `AuthenticationStore.signIn(resolving:)` acquires a
+  fresh credential instead of asking the person.
+- **gamification_app** (requires `from: "8.1.0"`, resolves 8.1.0). Has no conformances or
+  exhaustive switches, so it builds unchanged. `AccountModel.promote(_:)` signs in with the
+  **same** credential that just failed to link, which fails for Apple for the nonce reason
+  above; switch it to `signIn(resolving:)`. Its own `link` and credential conversion in
+  `Infrastructure/Auth/AuthenticationGateway.swift` can go the same way as stock-radar's.
+  Account deletion calls Firebase's `user.delete()` directly; `APIAccountDeletion` is the
+  server-side alternative.
+- **jibun-bgm** (`project.yml` pins `version: 8.0.0`, which XcodeGen writes as
+  `exactVersion`; the `Package.swift` files require `from: "8.0.0"`). Change all of them and
+  regenerate the project. Builds unchanged. Its `AccountStore` calls
+  `AuthenticationStore.deleteAccount()` on the device path, where the added sign-out changes
+  nothing visible.
+- **reading-memory** (requires `upToNextMajor(from: "1.0.0")`, resolves 1.1.10). Not affected
+  by this release; its `AuthTokenProviding` is its own protocol of the same name.
+
 ## [8.1.0] - 2026-09-27
 
 ### Added

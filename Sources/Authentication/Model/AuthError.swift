@@ -46,6 +46,16 @@ public enum AuthError: Error {
     /// Account deletion failed and the account still exists. Providers commonly refuse when
     /// the last sign-in is too old.
     case deleteAccountFailed(any Error)
+    /// The credential could not be linked because another account already owns it.
+    ///
+    /// The current session is untouched. The payload says which provider collided and carries
+    /// what is needed to sign in to the owning account instead — see ``CredentialCollision``
+    /// for why the credential that collided must not be exchanged again.
+    case credentialAlreadyInUse(CredentialCollision)
+    /// Linking a credential to the current account failed for any other reason — the provider
+    /// is already linked, the credential was rejected, the server could not be reached. The
+    /// current session is untouched.
+    case linkFailed(any Error)
     /// An operation that needs a signed-in user was requested while there was none.
     case notAuthenticated
     /// Required setup is missing or wrong — an unset client ID, no window to present from.
@@ -65,6 +75,8 @@ extension AuthError {
         case notPermitted
         case signOutFailed
         case deleteAccountFailed
+        case credentialAlreadyInUse
+        case linkFailed
         case notAuthenticated
         case configuration
     }
@@ -84,6 +96,8 @@ extension AuthError {
         case .notPermitted: .notPermitted
         case .signOutFailed: .signOutFailed
         case .deleteAccountFailed: .deleteAccountFailed
+        case .credentialAlreadyInUse: .credentialAlreadyInUse
+        case .linkFailed: .linkFailed
         case .notAuthenticated: .notAuthenticated
         case .configuration: .configuration
         }

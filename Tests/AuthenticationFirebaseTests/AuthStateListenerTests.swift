@@ -20,7 +20,7 @@ struct AuthStateListenerTests {
 
     @Test("observing sign-in state uses the injected instance, not the shared one")
     func listenerStaysOnTheInjectedInstance() {
-        let auth = Auth.auth(app: Self.secondaryApp)
+        let auth = Auth.auth(app: TestFirebaseApp.secondary)
 
         #expect(FirebaseApp.app() == nil, "the default app must stay unconfigured for this to mean anything")
 
@@ -36,20 +36,5 @@ struct AuthStateListenerTests {
         _ = iterator
 
         #expect(FirebaseApp.app() == nil, "removing the listener must not have configured a default app")
-    }
-
-    /// A Firebase app that is deliberately not the default one.
-    private static var secondaryApp: FirebaseApp {
-        let name = "AuthStateListenerTests"
-        if let existing = FirebaseApp.app(name: name) { return existing }
-
-        let options = FirebaseOptions(
-            googleAppID: "1:123456789:ios:0123456789abcdef",
-            gcmSenderID: "123456789"
-        )
-        options.projectID = "auth-state-listener-tests"
-        options.apiKey = "AIzaSyNotARealKeyUsedOnlyByTests"
-        FirebaseApp.configure(name: name, options: options)
-        return FirebaseApp.app(name: name)!
     }
 }

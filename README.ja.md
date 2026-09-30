@@ -59,13 +59,15 @@ struct MyApp: App {
     init() {
         FirebaseConfigurator.configure()   // 本番。エミュレータは .configure(environment: .emulator())
 
-        let apiClient = APIClient(
+        let apiClient = APIClientImpl(
             baseURL: URL(string: "https://api.example.com")!,
             authTokenProvider: APITokenProviderAdapter(FirebaseTokenProvider())
         )
 
         _store = State(initialValue: AuthenticationStore(
-            authenticator: FirebaseAuthenticator(),
+            authenticator: FirebaseAuthenticator(
+                accountDeletion: APIAccountDeletion(apiClient: apiClient, path: "/v1/me")
+            ),
             postAuthentication: APIUserProvisioning(apiClient: apiClient),
             credentialProviders: [
                 AppleCredentialProvider(),
@@ -139,6 +141,34 @@ struct MainView: View {
 Firebase ID トークンが `Authorization: Bearer` で自動付与される。ストアは
 **認証セッション中に 1 回だけ** 呼ぶが、再試行や再インストールでサーバは複数回受け取るため、
 エンドポイント側も冪等にすること。プロビジョニング不要なら `postAuthentication` を省略できる。
+
+### 匿名アカウントを引き継ぐ
+
+`signIn` はセッションを置き換えるので、匿名ユーザーが Apple でサインインすると user id が変わり、匿名アカウントのデータは置き去りになる。`link` は今のアカウントに資格情報を付け、id を保つ:
+
+```swift
+do {
+    try await store.link(using: .apple)
+} catch AuthError.credentialAlreadyInUse(let collision) {
+    // このプロバイダのアカウントを既に持っている（多くは別の端末で作った）。
+    // 切り替えると user id が変わるので、確かめてから呼ぶ。
+    try await store.signIn(resolving: collision)
+}
+```
+
+衝突した資格情報をもう一度交換してはいけない。Apple の ID トークンに入った nonce は link で使われていて、Firebase は "Duplicate credential received" を返す。`signIn(resolving:)` は Firebase がエラーに載せて返した資格情報を使い、無いときはプロバイダのシートを出して取り直す。Firebase を直接呼ぶコードは、自前で写しを持たずに `FirebaseCredentialMapper.makeCredential(from:)` で変換できる。
+
+### 退会をサーバーに任せる
+
+端末から Firebase のアカウントを消すと、最後のサインインが古いときに断られる（`requiresRecentLogin`）。先にサーバーのデータを消していると、その拒否はデータが消えた後に出る。`FirebaseAuthenticator` に `AccountDeletion` を渡すと（`APIAccountDeletion` は swift-api-client で `DELETE <path>` を送る）、`deleteAccount()` はサーバーを呼び、成功してからローカルのセッションを消す。渡さなければ今までどおり端末から消す。どちらの場合も、`deleteAccount()` がローカルのセッションまで消す。
+
+### トークンを強制的に更新する
+
+`AuthTokenProviding.token(forceRefresh:)` は、手元のトークンが期限内でも新しいものを取る。401 を受けた後に使う。トークンをクロージャで受ける transport には `tokenSource` を渡す:
+
+```swift
+let token: @Sendable (_ forceRefresh: Bool) async throws -> String = FirebaseTokenProvider().tokenSource
+```
 
 ### Sign in with Apple を使ったアカウントの削除
 

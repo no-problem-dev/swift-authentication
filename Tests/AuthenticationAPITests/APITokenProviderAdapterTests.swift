@@ -11,18 +11,23 @@ private final class MockTokenProviding: AuthTokenProviding, @unchecked Sendable 
         self.result = result
     }
 
-    func token() async throws -> String? {
-        try result.get()
+    private(set) var requests: [Bool] = []
+
+    func token(forceRefresh: Bool) async throws -> String? {
+        requests.append(forceRefresh)
+        return try result.get()
     }
 }
 
 @Suite("APITokenProviderAdapter")
 struct APITokenProviderAdapterTests {
-    @Test("fetchToken passes the underlying token through")
+    @Test("fetchToken passes the underlying token through, without forcing a refresh")
     func passesTokenThrough() async throws {
-        let adapter = APITokenProviderAdapter(MockTokenProviding(result: .success("id-token")))
+        let provider = MockTokenProviding(result: .success("id-token"))
+        let adapter = APITokenProviderAdapter(provider)
         let token = try await adapter.fetchToken()
         #expect(token == "id-token")
+        #expect(provider.requests == [false])
     }
 
     @Test("fetchToken returns nil when unauthenticated")

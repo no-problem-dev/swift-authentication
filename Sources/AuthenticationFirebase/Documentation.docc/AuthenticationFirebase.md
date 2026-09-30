@@ -48,6 +48,22 @@ let store = AuthenticationStore(authenticator: authenticator)
 so the composition root can hand it to `GoogleCredentialProvider` without importing
 FirebaseCore itself.
 
+### Linking and collisions
+
+``FirebaseAuthenticator/link(with:)`` attaches an Apple or Google credential to the signed-in
+user and keeps its uid, which is how an anonymous account is upgraded. When another account
+already owns the credential it throws `AuthError.credentialAlreadyInUse`, carrying the
+replacement credential Firebase issued; ``FirebaseAuthenticator/signIn(resolving:)`` signs in
+with that replacement rather than with the credential that collided, whose Apple nonce is
+already spent. ``FirebaseCredentialMapper`` is public for code that calls Firebase directly.
+
+### Deleting the account through your server
+
+Pass an `AccountDeletion` to ``FirebaseAuthenticator/init(auth:accountDeletion:)`` and
+``FirebaseAuthenticator/deleteAccount()`` calls it, then clears the local session only after it
+succeeded. Without one, the Firebase account is deleted from the device, which Firebase refuses
+when the last sign-in is too old.
+
 ### Deleting an account that used Sign in with Apple
 
 App Review requires revoking the user's Apple tokens when such an account is deleted
@@ -66,7 +82,11 @@ with the current user's ID token.
 ### Session exchange
 
 - ``FirebaseAuthenticator``
+- ``FirebaseAuthenticator/link(with:)``
+- ``FirebaseAuthenticator/signIn(resolving:)``
 - ``FirebaseAuthenticator/revokeAppleToken(authorizationCode:)``
+- ``FirebaseCredentialMapper``
+- ``FirebaseAuthenticatorError``
 
 ### Tokens
 

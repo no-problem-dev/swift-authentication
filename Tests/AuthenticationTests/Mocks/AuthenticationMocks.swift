@@ -11,11 +11,20 @@ final class MockAuthenticator: Authenticator {
     var signInError: (any Error)?
     var signOutError: (any Error)?
     var deleteError: (any Error)?
+    /// What `link(with:)` returns; `nil` makes it throw ``linkError`` or `notAuthenticated`.
+    var linkedUser: AuthUser?
+    var linkError: (any Error)?
+    /// What `signIn(resolving:)` does. `nil` rethrows the collision, which is how an
+    /// authenticator says the collision carries no replacement it can use.
+    var resolvedUser: AuthUser?
+    var resolveError: (any Error)?
 
     private(set) var signInCallCount = 0
     private(set) var signedInCredentials: [AuthCredential] = []
     private(set) var signOutCallCount = 0
     private(set) var deleteCallCount = 0
+    private(set) var linkedCredentials: [AuthCredential] = []
+    private(set) var resolveCallCount = 0
 
     private let continuation: AsyncStream<AuthUser?>.Continuation
     private let stream: AsyncStream<AuthUser?>
@@ -33,6 +42,21 @@ final class MockAuthenticator: Authenticator {
         if let signInError { throw signInError }
         continuation.yield(stubbedUser)
         return stubbedUser
+    }
+
+    func link(with credential: AuthCredential) async throws -> AuthUser {
+        linkedCredentials.append(credential)
+        if let linkError { throw linkError }
+        guard let linkedUser else { throw AuthError.notAuthenticated }
+        return linkedUser
+    }
+
+    func signIn(resolving collision: CredentialCollision) async throws -> AuthUser {
+        resolveCallCount += 1
+        if let resolveError { throw resolveError }
+        guard let resolvedUser else { throw AuthError.credentialAlreadyInUse(collision) }
+        continuation.yield(resolvedUser)
+        return resolvedUser
     }
 
     func signOut() async throws {
@@ -93,6 +117,26 @@ final class MockPostAuthenticationAction: PostAuthenticationAction, @unchecked S
             _performedUserIDs.append(user.id)
         }
         if let error { throw error }
+    }
+}
+
+/// A token provider that returns a fixed token per freshness and records what it was asked.
+final class MockTokenProvider: AuthTokenProviding, @unchecked Sendable {
+    private let lock = NSLock()
+    private let cached: String?
+    private let refreshed: String?
+    private var _requests: [Bool] = []
+
+    var requests: [Bool] { lock.withLock { _requests } }
+
+    init(cached: String?, refreshed: String?) {
+        self.cached = cached
+        self.refreshed = refreshed
+    }
+
+    func token(forceRefresh: Bool) async throws -> String? {
+        lock.withLock { _requests.append(forceRefresh) }
+        return forceRefresh ? refreshed : cached
     }
 }
 
