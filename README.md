@@ -188,7 +188,7 @@ API reference for every module: [no-problem-dev.github.io/swift-authentication](
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "9.0.0")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "10.0.0")
 ]
 ```
 

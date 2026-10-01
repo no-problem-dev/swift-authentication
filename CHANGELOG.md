@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.0.0] - 2026-10-01
+
+One more `AuthError` case, so a major by the same rule 9.0.0 followed: adding a case to a public
+enum breaks an exhaustive `switch`.
+
+### Added
+
+- **An email that belongs to another provider's account, as a type.**
+  `AuthError.accountExistsWithDifferentProvider(provider:email:)` and
+  `AuthError.Code.accountExistsWithDifferentProvider`. With Firebase's default "one account per
+  email address", linking or signing in with a credential whose email already belongs to an
+  account that uses a different provider fails with `emailAlreadyInUse` or
+  `accountExistsWithDifferentCredential`. `link(with:)` used to report both as `linkFailed` and
+  `signIn(with:)` passed Firebase's error through, so an app could only log them. Unlike
+  `credentialAlreadyInUse` there is no account to switch to with this credential — the person has
+  to use the provider that account already has — so it is a case of its own. `provider` is the
+  provider that was attempted, `email` the address Firebase reported, when it did.
+  `FirebaseAuthenticator` raises it from `link(with:)`, `signIn(with:)` and
+  `signIn(resolving:)`.
+
+### Changed
+
+- **BREAKING** — `AuthError` and `AuthError.Code` gain the case above. Source-breaking for an
+  exhaustive `switch`.
+- `AuthenticationStore.signIn(with:)`, `signIn(using:)` and `signIn(resolving:)` throw
+  `accountExistsWithDifferentProvider` as it is instead of wrapping it in
+  `sessionExchangeFailed`, so the caller can show which account is meant. `signIn(with:)` still
+  sets `state` to `.error` with that error. Every other failure is wrapped as before.
+
+### Migration
+
+An exhaustive `switch` over `AuthError` or `AuthError.Code` adds the new case. Nothing else
+stops compiling. Code that matched `linkFailed` or `sessionExchangeFailed` to catch these two
+Firebase errors now receives `accountExistsWithDifferentProvider`. The apps in this workspace,
+as of this release (none switches over `AuthError` exhaustively, so each builds unchanged once
+its requirement admits 10.x):
+
+- **stock-radar** (requires `from: "5.0.1"`). The 9.0.0 migration still applies first. Its own
+  `AuthenticationGateway` calls Firebase directly and does not see the new case.
+- **jibun-bgm** (`project.yml` pins `version: 8.0.0`; the `Package.swift` files require
+  `from: "8.0.0"`). Raise them together with the 9.0.0 migration and regenerate the project.
+- **gamification_app** (requires `from: "8.1.0"`). Same as jibun-bgm; its gateway maps
+  Firebase's errors itself.
+- **reading-memory** (`upToNextMajor(from: "1.0.0")`). Not affected.
+- **tabisaki** (path dependency). Maps the case to its own account error.
+
 ## [9.0.0] - 2026-09-30
 
 Four fixes that each change a public protocol or enum, released together as one major so
