@@ -56,6 +56,15 @@ public enum AuthError: Error {
     /// is already linked, the credential was rejected, the server could not be reached. The
     /// current session is untouched.
     case linkFailed(any Error)
+    /// The credential's email address already belongs to an account that signs in with a
+    /// different provider, and the server keeps one account per email address.
+    ///
+    /// Raised by linking and by signing in, with the current session untouched. Unlike
+    /// ``credentialAlreadyInUse(_:)`` there is no account this credential can switch to: the
+    /// person has to sign in with the provider that account already uses. `provider` is the
+    /// one that was attempted, and `email` the address the server reported, when it did — show
+    /// it so the person knows which account is meant.
+    case accountExistsWithDifferentProvider(provider: AuthProviderID, email: String?)
     /// An operation that needs a signed-in user was requested while there was none.
     case notAuthenticated
     /// Required setup is missing or wrong — an unset client ID, no window to present from.
@@ -77,6 +86,7 @@ extension AuthError {
         case deleteAccountFailed
         case credentialAlreadyInUse
         case linkFailed
+        case accountExistsWithDifferentProvider
         case notAuthenticated
         case configuration
     }
@@ -98,6 +108,7 @@ extension AuthError {
         case .deleteAccountFailed: .deleteAccountFailed
         case .credentialAlreadyInUse: .credentialAlreadyInUse
         case .linkFailed: .linkFailed
+        case .accountExistsWithDifferentProvider: .accountExistsWithDifferentProvider
         case .notAuthenticated: .notAuthenticated
         case .configuration: .configuration
         }

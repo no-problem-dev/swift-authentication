@@ -44,11 +44,13 @@ public final class FirebaseAuthenticator: Authenticator, Sendable {
     ///
     /// - Parameter credential: What the acquisition layer produced.
     /// - Returns: The signed-in user.
-    /// - Throws: Firebase's authentication error, or ``FirebaseAuthenticatorError`` when the
-    ///   credential is missing the fields its provider requires.
+    /// - Throws: `AuthError.accountExistsWithDifferentProvider` when the credential's email
+    ///   address belongs to an account that uses another provider. Otherwise Firebase's
+    ///   authentication error, or ``FirebaseAuthenticatorError`` when the credential is missing
+    ///   the fields its provider requires.
     public func signIn(with credential: Authentication.AuthCredential) async throws -> AuthUser {
         if let firebaseCredential = try FirebaseCredentialMapper.makeCredential(from: credential) {
-            return try await backend.signIn(with: firebaseCredential)
+            return try await exchange(firebaseCredential, provider: credential.provider)
         }
         return try await backend.signInAnonymously()
     }
@@ -60,7 +62,10 @@ public final class FirebaseAuthenticator: Authenticator, Sendable {
     /// - Throws: `AuthError.notAuthenticated` when nobody is signed in.
     ///   `AuthError.credentialAlreadyInUse` when another Firebase account already owns the
     ///   credential; its payload carries the replacement credential Firebase issued, which
-    ///   ``signIn(resolving:)`` uses. `AuthError.linkFailed` for everything else, including a
+    ///   ``signIn(resolving:)`` uses. `AuthError.accountExistsWithDifferentProvider` when the
+    ///   credential's email address belongs to an account that uses another provider
+    ///   (Firebase's `emailAlreadyInUse` and `accountExistsWithDifferentCredential`).
+    ///   `AuthError.linkFailed` for everything else, including a
     ///   credential that cannot be converted and a provider already linked to this user.
     public func link(with credential: Authentication.AuthCredential) async throws -> AuthUser {
         let firebaseCredential: FirebaseAuth.AuthCredential
@@ -80,6 +85,8 @@ public final class FirebaseAuthenticator: Authenticator, Sendable {
             where error.domain == AuthErrors.domain
             && error.code == AuthErrorCode.credentialAlreadyInUse.rawValue {
             throw AuthError.credentialAlreadyInUse(Self.collision(from: error, provider: credential.provider))
+        } catch let error as NSError where Self.isOtherProvidersEmail(error) {
+            throw Self.otherProvidersEmail(error, provider: credential.provider)
         } catch {
             throw AuthError.linkFailed(error)
         }
@@ -98,13 +105,14 @@ public final class FirebaseAuthenticator: Authenticator, Sendable {
     ///   ``link(with:)`` threw.
     /// - Returns: The user of the owning account. The uid changes to that account's.
     /// - Throws: `AuthError.credentialAlreadyInUse(collision)` unchanged when Firebase issued no
-    ///   replacement — a fresh credential from the provider is needed — and Firebase's error
-    ///   when the exchange fails.
+    ///   replacement — a fresh credential from the provider is needed —
+    ///   `AuthError.accountExistsWithDifferentProvider` as for ``signIn(with:)``, and Firebase's
+    ///   error when the exchange fails.
     public func signIn(resolving collision: CredentialCollision) async throws -> AuthUser {
         guard let renewed = collision.renewedCredential as? FirebaseRenewedCredential else {
             throw AuthError.credentialAlreadyInUse(collision)
         }
-        return try await backend.signIn(with: renewed.credential)
+        return try await exchange(renewed.credential, provider: collision.provider)
     }
 
     /// Clears the keychain-backed session.
@@ -174,6 +182,27 @@ public final class FirebaseAuthenticator: Authenticator, Sendable {
     }
 
     // MARK: - Internals
+
+    private func exchange(_ credential: FirebaseAuth.AuthCredential, provider: Authentication.AuthProviderID) async throws -> AuthUser {
+        do {
+            return try await backend.signIn(with: credential)
+        } catch let error as NSError where Self.isOtherProvidersEmail(error) {
+            throw Self.otherProvidersEmail(error, provider: provider)
+        }
+    }
+
+    private static let otherProvidersEmailCodes: Set<Int> = [
+        AuthErrorCode.emailAlreadyInUse.rawValue,
+        AuthErrorCode.accountExistsWithDifferentCredential.rawValue
+    ]
+
+    private static func isOtherProvidersEmail(_ error: NSError) -> Bool {
+        error.domain == AuthErrors.domain && otherProvidersEmailCodes.contains(error.code)
+    }
+
+    private static func otherProvidersEmail(_ error: NSError, provider: Authentication.AuthProviderID) -> AuthError {
+        .accountExistsWithDifferentProvider(provider: provider, email: error.userInfo[AuthErrors.userInfoEmailKey] as? String)
+    }
 
     private static func collision(from error: NSError, provider: Authentication.AuthProviderID) -> CredentialCollision {
         let renewed = error.userInfo[AuthErrors.userInfoUpdatedCredentialKey] as? FirebaseAuth.AuthCredential

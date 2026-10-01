@@ -81,12 +81,13 @@ public final class AuthenticationStore {
     /// the user and advances ``state``. On failure ``state`` becomes an error before throwing.
     ///
     /// - Parameter credential: A credential from a provider, or ``AuthCredential/anonymous``.
-    /// - Throws: ``AuthError/sessionExchangeFailed(_:)``.
+    /// - Throws: ``AuthError/accountExistsWithDifferentProvider(provider:email:)`` unchanged
+    ///   when the authenticator raised it, ``AuthError/sessionExchangeFailed(_:)`` otherwise.
     public func signIn(with credential: AuthCredential) async throws {
         do {
             _ = try await authenticator.signIn(with: credential)
         } catch {
-            let authError = AuthError.sessionExchangeFailed(error)
+            let authError = Self.exchangeFailure(error)
             state = .error(authError)
             throw authError
         }
@@ -151,8 +152,10 @@ public final class AuthenticationStore {
     /// - Parameter collision: The payload of ``AuthError/credentialAlreadyInUse(_:)``.
     /// - Throws: ``AuthError/unsupportedProvider(_:)`` when a fresh credential is needed and no
     ///   provider is registered for ``CredentialCollision/provider``, ``AuthError/cancelled``
-    ///   when the person backs out of the provider's sheet, and
-    ///   ``AuthError/sessionExchangeFailed(_:)`` when the exchange fails.
+    ///   when the person backs out of the provider's sheet,
+    ///   ``AuthError/accountExistsWithDifferentProvider(provider:email:)`` unchanged when the
+    ///   authenticator raised it, and ``AuthError/sessionExchangeFailed(_:)`` when the exchange
+    ///   fails otherwise.
     public func signIn(resolving collision: CredentialCollision) async throws {
         do {
             _ = try await authenticator.signIn(resolving: collision)
@@ -160,7 +163,7 @@ public final class AuthenticationStore {
         } catch AuthError.credentialAlreadyInUse {
             // No replacement this authenticator can use: fall through to a fresh credential.
         } catch {
-            throw AuthError.sessionExchangeFailed(error)
+            throw Self.exchangeFailure(error)
         }
 
         guard let provider = credentialProviders[collision.provider] else {
@@ -170,8 +173,14 @@ public final class AuthenticationStore {
         do {
             _ = try await authenticator.signIn(with: fresh)
         } catch {
-            throw AuthError.sessionExchangeFailed(error)
+            throw Self.exchangeFailure(error)
         }
+    }
+
+    /// Wraps a failed exchange, except a refusal the person can act on, which keeps its name.
+    private static func exchangeFailure(_ error: any Error) -> AuthError {
+        if let authError = error as? AuthError, authError.code == .accountExistsWithDifferentProvider { return authError }
+        return .sessionExchangeFailed(error)
     }
 
     // MARK: - Sign out and delete

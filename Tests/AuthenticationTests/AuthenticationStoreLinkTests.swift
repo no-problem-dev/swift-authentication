@@ -175,10 +175,23 @@ struct AuthenticationStoreLinkTests {
         #expect(store.state == .authenticated(anonymous))
     }
 
+    @Test("an email owned by another provider's account keeps its name through the exchange")
+    func resolveKeepsOtherProvidersEmail() async {
+        let authenticator = MockAuthenticator(stubbedUser: anonymous)
+        authenticator.resolveError = AuthError.accountExistsWithDifferentProvider(provider: .google, email: "owner@example.com")
+        let store = await signedInStore(authenticator)
+
+        await #expect {
+            try await store.signIn(resolving: CredentialCollision(provider: .google, renewedCredential: "r"))
+        } throws: { ($0 as? AuthError)?.code == .accountExistsWithDifferentProvider }
+        #expect(store.state == .authenticated(anonymous))
+    }
+
     @Test("AuthError.code covers the collision and link cases")
     func codesForNewCases() {
         #expect(AuthError.credentialAlreadyInUse(CredentialCollision(provider: .apple)).code == .credentialAlreadyInUse)
         #expect(AuthError.linkFailed(TestError()).code == .linkFailed)
+        #expect(AuthError.accountExistsWithDifferentProvider(provider: .apple, email: nil).code == .accountExistsWithDifferentProvider)
     }
 }
 

@@ -130,6 +130,46 @@ struct FirebaseAuthenticatorTests {
         } throws: { ($0 as? AuthError)?.code == .linkFailed }
     }
 
+    @Test("an email owned by an account of another provider becomes .accountExistsWithDifferentProvider on link", arguments: [
+        AuthErrorCode.emailAlreadyInUse, AuthErrorCode.accountExistsWithDifferentCredential
+    ])
+    func linkOtherProvidersEmail(code: AuthErrorCode) async throws {
+        let backend = FakeFirebaseAuthBackend(user: anonymous)
+        backend.linkError = Self.firebaseError(code, email: "owner@example.com")
+        let authenticator = FirebaseAuthenticator(backend: backend)
+
+        let refusal = try await Self.otherProvidersEmail { _ = try await authenticator.link(with: googleCredential) }
+
+        #expect(refusal.provider == .google)
+        #expect(refusal.email == "owner@example.com")
+    }
+
+    @Test("signing in with a credential whose email belongs to another provider's account is typed too")
+    func signInOtherProvidersEmail() async throws {
+        let backend = FakeFirebaseAuthBackend()
+        backend.signInResult = .failure(Self.firebaseError(.accountExistsWithDifferentCredential, email: nil))
+        let authenticator = FirebaseAuthenticator(backend: backend)
+
+        let refusal = try await Self.otherProvidersEmail { _ = try await authenticator.signIn(with: appleCredential) }
+
+        #expect(refusal.provider == .apple)
+        #expect(refusal.email == nil)
+    }
+
+    @Test("resolving a collision into an email owned by another provider's account is typed too")
+    func resolveOtherProvidersEmail() async throws {
+        let renewed = GoogleAuthProvider.credential(withIDToken: "renewed-id", accessToken: "renewed-access")
+        let backend = FakeFirebaseAuthBackend(user: anonymous)
+        backend.signInResult = .failure(Self.firebaseError(.accountExistsWithDifferentCredential, email: "owner@example.com"))
+        let authenticator = FirebaseAuthenticator(backend: backend)
+        let collision = CredentialCollision(provider: .google, renewedCredential: FirebaseRenewedCredential(credential: renewed))
+
+        let refusal = try await Self.otherProvidersEmail { _ = try await authenticator.signIn(resolving: collision) }
+
+        #expect(refusal.provider == .google)
+        #expect(refusal.email == "owner@example.com")
+    }
+
     // MARK: - Resolving a collision
 
     /// The defect this exists to prevent: exchanging the credential that collided again. For
@@ -263,6 +303,22 @@ struct FirebaseAuthenticatorTests {
         if let email { userInfo[AuthErrors.userInfoEmailKey] = email }
         if let renewed { userInfo[AuthErrors.userInfoUpdatedCredentialKey] = renewed }
         return NSError(domain: AuthErrors.domain, code: AuthErrorCode.credentialAlreadyInUse.rawValue, userInfo: userInfo)
+    }
+
+    private static func firebaseError(_ code: AuthErrorCode, email: String?) -> NSError {
+        NSError(domain: AuthErrors.domain, code: code.rawValue, userInfo: email.map { [AuthErrors.userInfoEmailKey: $0] } ?? [:])
+    }
+
+    private static func otherProvidersEmail(
+        _ body: () async throws -> Void
+    ) async throws -> (provider: Authentication.AuthProviderID, email: String?) {
+        do {
+            try await body()
+        } catch let AuthError.accountExistsWithDifferentProvider(provider, email) {
+            return (provider, email)
+        }
+        Issue.record("expected .accountExistsWithDifferentProvider")
+        throw FakeError.boom
     }
 
     /// Links and returns the collision the authenticator threw, failing the test otherwise.

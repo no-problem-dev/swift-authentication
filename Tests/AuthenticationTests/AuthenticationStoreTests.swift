@@ -157,6 +157,19 @@ struct AuthenticationStoreTests {
         }
     }
 
+    @Test("an email owned by another provider's account is thrown by name, not wrapped")
+    func exchangeOtherProvidersEmail() async {
+        let authenticator = MockAuthenticator()
+        authenticator.signInError = AuthError.accountExistsWithDifferentProvider(provider: .apple, email: "owner@example.com")
+        let provider = MockCredentialProvider(providerID: .apple)
+        let store = AuthenticationStore(authenticator: authenticator, credentialProviders: [provider])
+
+        await #expect {
+            try await store.signIn(using: .apple)
+        } throws: { ($0 as? AuthError)?.code == .accountExistsWithDifferentProvider }
+        #expect({ if case .error(let error) = store.state { return (error as? AuthError)?.code == .accountExistsWithDifferentProvider } else { return false } }())
+    }
+
     @Test("exchange failure throws .sessionExchangeFailed and sets .error state")
     func exchangeFailure() async {
         let authenticator = MockAuthenticator()
