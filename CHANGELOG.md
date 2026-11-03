@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Retrying failed post-authentication work without signing out.**
+  `AuthenticationStore.retryPostAuthentication()`. When `PostAuthenticationAction.perform(for:)`
+  fails — a provisioning endpoint answering 503, or the network dropping right after sign-in —
+  `state` becomes `.error` while the session stays signed in, and the store only tried again when
+  the authenticator reported the user anew. An app had no way to cause that short of signing out
+  and in again. `retryPostAuthentication()` runs the action again for the user it failed for,
+  keeping the session: `state` goes through `.authenticatedPendingProvisioning` to
+  `.authenticated`, or back to `.error` with the new failure.
+
+  It does nothing unless the current error came from post-authentication work — not after a failed
+  exchange, when signed out, when authenticated, or while an attempt is already running, so a
+  double tap runs the action once. A sign-out or another user arriving during the retry takes
+  precedence and the retry's outcome is dropped. `signOut()` and the automatic retry on the next
+  auth-state change are unchanged. An emission for the same user while a retry is running waits
+  for that retry instead of publishing `.authenticated` early or starting the action again.
+
 ## [10.1.0] - 2026-11-03
 
 ### Added

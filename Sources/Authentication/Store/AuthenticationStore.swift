@@ -23,9 +23,9 @@ public final class AuthenticationStore {
     @ObservationIgnored private let postAuthentication: any PostAuthenticationAction
     @ObservationIgnored private let credentialProviders: [AuthProviderID: any CredentialProvider]
 
-    /// The user whose post-authentication work has been claimed, so a repeated emission does
-    /// not run it twice. Cleared on sign-out and on failure, which is what allows a retry.
-    @ObservationIgnored private var provisionedUserID: String?
+    /// Where post-authentication work stands for the signed-in user. Claimed before any await,
+    /// so a repeated emission or a second retry does not run it twice. Cleared on sign-out.
+    @ObservationIgnored private var provisioning: Provisioning?
     @ObservationIgnored private var observationTask: Task<Void, Never>?
 
     /// Assembles a session from its three layers and starts observing straight away.
@@ -88,9 +88,34 @@ public final class AuthenticationStore {
             _ = try await authenticator.signIn(with: credential)
         } catch {
             let authError = Self.exchangeFailure(error)
+            // The published error is now the exchange's, so there is no failed provisioning
+            // left for `retryPostAuthentication()` to repeat.
+            if case .failed = provisioning { provisioning = nil }
             state = .error(authError)
             throw authError
         }
+    }
+
+    // MARK: - Retry
+
+    /// Runs the post-authentication work again after it failed, keeping the session.
+    ///
+    /// When provisioning fails ``state`` becomes ``AuthenticationState/error(_:)`` while the
+    /// session stays signed in, and nothing retries it until the authenticator reports the user
+    /// again. Call this — from a "Try again" button, say — to repeat only
+    /// ``PostAuthenticationAction/perform(for:)`` for the user it failed for, without signing
+    /// out or exchanging a credential again. ``state`` passes through
+    /// ``AuthenticationState/authenticatedPendingProvisioning`` and ends at
+    /// ``AuthenticationState/authenticated(_:)``, or back at
+    /// ``AuthenticationState/error(_:)`` with the new failure.
+    ///
+    /// Does nothing unless the current error came from post-authentication work: not after a
+    /// failed exchange, when signed out, when already authenticated, or while an attempt is
+    /// running — so calling it twice in a row runs the work once. A sign-out or a different
+    /// user arriving while it runs takes precedence, and the retry's outcome is dropped.
+    public func retryPostAuthentication() async {
+        guard case .error = state, case .failed(let user) = provisioning else { return }
+        await provision(user)
     }
 
     // MARK: - Link
@@ -243,36 +268,55 @@ public final class AuthenticationStore {
 
     private func handleAuthStateChange(_ user: AuthUser?) async {
         guard let user else {
-            provisionedUserID = nil
+            provisioning = nil
             state = .unauthenticated
             return
         }
 
-        // Already provisioned: go straight through, so the UI never flashes a loading state.
-        if provisionedUserID == user.id {
+        switch provisioning {
+        case .completed(let userID) where userID == user.id:
+            // Already provisioned: go straight through, so the UI never flashes a loading state.
             state = .authenticated(user)
-            return
+        case .inFlight(let userID) where userID == user.id:
+            // A retry is running for this user; it publishes the outcome.
+            break
+        default:
+            await provision(user)
         }
+    }
 
-        // Claim the user synchronously, before any await, so back-to-back emissions for the
-        // same user cannot both start provisioning.
-        provisionedUserID = user.id
+    private func provision(_ user: AuthUser) async {
+        // Claim the user synchronously, before any await, so back-to-back emissions or retries
+        // for the same user cannot both start provisioning.
+        provisioning = .inFlight(userID: user.id)
         state = .authenticatedPendingProvisioning
         do {
             try await postAuthentication.perform(for: user)
-            // Commit only if the claim still stands; a sign-out during provisioning drops it.
-            if provisionedUserID == user.id {
-                state = .authenticated(user)
-            }
+            // Commit only if the claim still stands; a sign-out or another user drops it.
+            guard isInFlight(for: user) else { return }
+            provisioning = .completed(userID: user.id)
+            state = .authenticated(user)
         } catch {
-            if provisionedUserID == user.id {
-                provisionedUserID = nil   // Release the claim so a later attempt can provision.
-            }
+            guard isInFlight(for: user) else { return }
+            // Keep the user, so a later emission or `retryPostAuthentication()` can provision.
+            provisioning = .failed(user)
             // An action that already named its failure keeps that name. Wrapping an
             // `AuthError.notPermitted` in `postAuthenticationFailed` would put the caller back
             // where it started: one case for a refusal to re-authenticate against and a refusal
             // to stop asking about, told apart only by unwrapping.
             state = .error(error as? AuthError ?? AuthError.postAuthenticationFailed(error))
         }
+    }
+
+    private func isInFlight(for user: AuthUser) -> Bool {
+        if case .inFlight(let userID) = provisioning { return userID == user.id }
+        return false
+    }
+
+    private enum Provisioning {
+        case inFlight(userID: String)
+        case completed(userID: String)
+        /// Holds the whole user, because a retry has to hand it to the action again.
+        case failed(AuthUser)
     }
 }

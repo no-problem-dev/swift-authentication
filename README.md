@@ -136,6 +136,18 @@ Only `.authenticated` means the account is ready: while provisioning is pending 
 
 `APIUserProvisioning` calls `POST <path>` (default `/auth/initialize`) once the session exists, with the Firebase ID token attached as `Authorization: Bearer`. The store calls it **once per authentication session**, but retries and reinstalls mean the endpoint has to be idempotent on the server too. Omit `postAuthentication` when there is nothing to provision.
 
+### Retrying provisioning after a failure
+
+When the post-authentication action fails, `state` becomes `.error` but the session stays signed in. Offer a "Try again" that repeats only the action, instead of a sign-out:
+
+```swift
+Button("Try again") {
+    Task { await store.retryPostAuthentication() }
+}
+```
+
+`state` goes through `.authenticatedPendingProvisioning` to `.authenticated`, or back to `.error` with the new failure. The call does nothing unless the current error came from post-authentication work (not after a failed exchange, when signed out, or while an attempt is running), so a double tap runs the action once. The server still has to accept the request more than once.
+
 ### Upgrading an anonymous account
 
 `signIn` replaces the session, so an anonymous user who signs in with Apple gets a new user id and leaves the anonymous account's data behind. `link` attaches the credential to the account in hand and keeps the id:
