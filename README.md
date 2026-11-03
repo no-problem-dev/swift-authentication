@@ -152,6 +152,18 @@ do {
 
 Never exchange the credential that collided a second time: the nonce inside an Apple identity token is spent by the link, and Firebase answers "Duplicate credential received". `signIn(resolving:)` uses the replacement credential Firebase returned with the error and, when there is none, runs the provider's sheet again for a fresh one. Code that talks to Firebase directly can convert this package's credentials with `FirebaseCredentialMapper.makeCredential(from:)` rather than keeping its own copy.
 
+### Keeping an anonymous user across reinstalls
+
+`FirebaseConfigurator.configure()` signs out on the first launch after an install. Firebase keeps the session in the keychain, which survives deleting the app, so without that a reinstall would silently restore the previous owner's session. Apps with Apple or Google sign-in keep this default.
+
+An app that signs in only anonymously needs the opposite. An anonymous user has nothing to sign in with again, so signing out makes the uid — and everything your server keeps under it — unreachable for good. Pass `.keep` and a reinstall comes back as the same anonymous user, able to read those records again:
+
+```swift
+FirebaseConfigurator.configure(sessionAfterReinstall: .keep)
+```
+
+Whoever holds the device inherits the anonymous account, which is acceptable only because it carries no identity. Restoring a backup onto a different device or erasing the device does not keep the keychain, and starts a new anonymous user.
+
 ### Deleting the account through your server
 
 Deleting the Firebase account from the device is refused when the last sign-in is too old (`requiresRecentLogin`), and when the app first deletes its server data that refusal arrives after the data is gone. Give `FirebaseAuthenticator` an `AccountDeletion` — `APIAccountDeletion` sends `DELETE <path>` through swift-api-client — and `deleteAccount()` calls the server, then clears the local session only once the server succeeded. Without one, the account is deleted from the device as before. Either way, `deleteAccount()` now ends the local session itself.

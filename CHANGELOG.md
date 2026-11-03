@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Keeping the session across a reinstall, for apps that sign in only anonymously.**
+  `FirebaseConfigurator.SessionAfterReinstall` (`.signOut` / `.keep`) and
+  `FirebaseConfigurator.configure(environment:sessionAfterReinstall:enableDebugMode:)`.
+  `configure` signs out on the first launch after an install, because Firebase keeps the session
+  in the keychain and a reinstall would otherwise restore the previous owner's. For an app whose
+  only sign-in is anonymous that is the wrong way round: an anonymous user cannot sign in again,
+  so signing out strands the uid and every record the server keeps under it.
+  `configure(sessionAfterReinstall: .keep)` leaves the session in place, so a reinstall comes back
+  as the same anonymous user. It still records the first launch as handled, so an app that later
+  switches back to `.signOut` does not sign out the user it had been keeping.
+
+  `configure(environment:enableDebugMode:)` is unchanged and still signs out, so existing apps
+  behave as before without touching their code.
+
 ## [10.0.0] - 2026-10-01
 
 One more `AuthError` case, so a major by the same rule 9.0.0 followed: adding a case to a public

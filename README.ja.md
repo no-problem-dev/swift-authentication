@@ -158,6 +158,18 @@ do {
 
 衝突した資格情報をもう一度交換してはいけない。Apple の ID トークンに入った nonce は link で使われていて、Firebase は "Duplicate credential received" を返す。`signIn(resolving:)` は Firebase がエラーに載せて返した資格情報を使い、無いときはプロバイダのシートを出して取り直す。Firebase を直接呼ぶコードは、自前で写しを持たずに `FirebaseCredentialMapper.makeCredential(from:)` で変換できる。
 
+### 再インストール後も匿名ユーザーを保つ
+
+`FirebaseConfigurator.configure()` は、インストール後の初回起動でサインアウトする。Firebase のセッションはアプリを消しても残るキーチェーンにあるので、これが無いと再インストールで前の持ち主のセッションが黙って戻る。Apple や Google でサインインするアプリはこの既定のままにする。
+
+匿名ログインだけのアプリでは逆になる。匿名ユーザーにはサインインし直す手段が無く、サインアウトするとその uid と、サーバーが uid に紐づけて持つ記録に二度と届かない。`.keep` を渡すと再インストール後も同じ匿名ユーザーで戻り、サーバーの記録を読み直せる:
+
+```swift
+FirebaseConfigurator.configure(sessionAfterReinstall: .keep)
+```
+
+端末を持った人が匿名アカウントを引き継ぐことになるが、匿名アカウントは本人を表さないので許容できる。別の端末へのバックアップ復元や端末の消去では、キーチェーンも残らず新しい匿名ユーザーになる。
+
 ### 退会をサーバーに任せる
 
 端末から Firebase のアカウントを消すと、最後のサインインが古いときに断られる（`requiresRecentLogin`）。先にサーバーのデータを消していると、その拒否はデータが消えた後に出る。`FirebaseAuthenticator` に `AccountDeletion` を渡すと（`APIAccountDeletion` は swift-api-client で `DELETE <path>` を送る）、`deleteAccount()` はサーバーを呼び、成功してからローカルのセッションを消す。渡さなければ今までどおり端末から消す。どちらの場合も、`deleteAccount()` がローカルのセッションまで消す。

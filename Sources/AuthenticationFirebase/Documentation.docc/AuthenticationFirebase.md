@@ -27,9 +27,16 @@ FirebaseConfigurator.configure(environment: .production)
 // FirebaseConfigurator.configure(environment: .emulator(host: "localhost", port: 9099))
 ```
 
-Configuring also signs out on the first launch after an install. Firebase keeps sessions in
-the keychain, which survives deleting the app, so without that step a reinstall would silently
-restore whoever was signed in before.
+By default, configuring also signs out on the first launch after an install. Firebase keeps
+sessions in the keychain, which survives deleting the app, so without that step a reinstall
+would silently restore whoever was signed in before. An app that signs in only anonymously wants
+the opposite — signing out would strand the anonymous uid and everything the server keeps under
+it — and passes ``FirebaseConfigurator/SessionAfterReinstall/keep`` to
+``FirebaseConfigurator/configure(environment:sessionAfterReinstall:enableDebugMode:)``:
+
+```swift
+FirebaseConfigurator.configure(sessionAfterReinstall: .keep)
+```
 
 ``FirebaseAuthenticator`` and ``FirebaseTokenProvider`` are injected into
 `AuthenticationStore` at the composition root.
@@ -78,6 +85,7 @@ with the current user's ID token.
 
 - ``FirebaseConfigurator``
 - ``FirebaseConfigurator/Environment``
+- ``FirebaseConfigurator/SessionAfterReinstall``
 
 ### Session exchange
 

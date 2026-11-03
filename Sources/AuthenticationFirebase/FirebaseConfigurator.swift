@@ -20,7 +20,40 @@ public enum FirebaseConfigurator {
         public static var defaultEmulator: Environment { .emulator() }
     }
 
-    /// Configures Firebase. Call once, at launch, before anything touches authentication.
+    /// What happens to the Firebase session a previous install left in the keychain.
+    ///
+    /// Deleting the app removes its user defaults but not its keychain items, so after a
+    /// reinstall Firebase finds the old session and restores it. Whether that is a leak or the
+    /// whole point depends on what the session stands for.
+    public enum SessionAfterReinstall: Sendable {
+        /// Sign out on the first launch after an install, as
+        /// ``configure(environment:enableDebugMode:)`` does.
+        ///
+        /// Choose this when people sign in with an identity of their own — Apple, Google, email.
+        /// The device may have changed hands, and the person who reinstalls can sign in again,
+        /// so restoring the previous session silently would hand one person's account to
+        /// another.
+        case signOut
+
+        /// Keep the session, so a reinstall comes back as the same user.
+        ///
+        /// Choose this when the app signs in **only anonymously**. An anonymous user has no
+        /// credential to sign in with again: once signed out, the uid — and every record your
+        /// server keeps under it — is unreachable for good. Keeping the session lets a reinstall
+        /// read those records again. The trade-off is that whoever holds the device inherits the
+        /// anonymous account, which is acceptable only because it carries no identity.
+        ///
+        /// The keychain does not survive everything: restoring a backup onto a different device
+        /// or erasing the device still starts a new anonymous user.
+        case keep
+    }
+
+    /// Configures Firebase, signing out on the first launch after an install. Call once, at
+    /// launch, before anything touches authentication.
+    ///
+    /// The same as ``configure(environment:sessionAfterReinstall:enableDebugMode:)`` with
+    /// ``SessionAfterReinstall/signOut`` — the right choice for any app where people sign in
+    /// with an identity of their own.
     ///
     /// - Parameters:
     ///   - environment: Which backend to talk to. Defaults to the live project.
@@ -34,6 +67,39 @@ public enum FirebaseConfigurator {
     ///   silently restore the previous owner's session.
     public static func configure(
         environment: Environment = .production,
+        enableDebugMode: Bool = false
+    ) {
+        configure(
+            environment: environment,
+            sessionAfterReinstall: .signOut,
+            enableDebugMode: enableDebugMode
+        )
+    }
+
+    /// Configures Firebase, choosing what happens to the session a previous install left
+    /// behind. Call once, at launch, before anything touches authentication.
+    ///
+    /// ```swift
+    /// // An app with Apple / Google sign-in: a reinstall starts signed out.
+    /// FirebaseConfigurator.configure()
+    ///
+    /// // An app that only ever signs in anonymously: a reinstall keeps the same user.
+    /// FirebaseConfigurator.configure(sessionAfterReinstall: .keep)
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - environment: Which backend to talk to. Defaults to the live project.
+    ///   - sessionAfterReinstall: What to do with the session a previous install left in the
+    ///     keychain. Pass ``SessionAfterReinstall/keep`` only for an app whose sign-in is
+    ///     anonymous alone; see ``SessionAfterReinstall`` for why.
+    ///   - enableDebugMode: Turns on Firebase's verbose diagnostics by writing its debug flags
+    ///     to user defaults. Leave it off in shipping builds.
+    ///
+    /// - Important: Pointing a release build at the emulator would authenticate real users
+    ///   against a server that trusts everyone, so it traps instead of starting.
+    public static func configure(
+        environment: Environment = .production,
+        sessionAfterReinstall: SessionAfterReinstall,
         enableDebugMode: Bool = false
     ) {
         #if !DEBUG
@@ -54,7 +120,7 @@ public enum FirebaseConfigurator {
             Auth.auth().useEmulator(withHost: host, port: port)
         }
 
-        signOutOnFirstLaunchIfNeeded()
+        signOutOnFirstLaunchIfNeeded(sessionAfterReinstall)
     }
 
     /// The Google OAuth client ID that came from `GoogleService-Info.plist`, or `nil` before
@@ -66,15 +132,20 @@ public enum FirebaseConfigurator {
         FirebaseApp.app()?.options.clientID
     }
 
-    /// Signs out on the first launch after an install.
+    /// Signs out on the first launch after an install, unless the app asked to keep the session.
     ///
     /// Firebase persists the session in the keychain, which is not removed when the app is
     /// deleted, so a reinstall would otherwise restore whoever was signed in before. User
     /// defaults are cleared by deletion, which makes their emptiness a reliable signal that
     /// this is a fresh install.
-    private static func signOutOnFirstLaunchIfNeeded() {
+    private static func signOutOnFirstLaunchIfNeeded(
+        _ sessionAfterReinstall: SessionAfterReinstall
+    ) {
         guard FirebaseApp.app() != nil else { return }
-        clearStoredSessionOnFirstLaunch(defaults: .standard) {
+        clearStoredSessionOnFirstLaunch(
+            defaults: .standard,
+            sessionAfterReinstall: sessionAfterReinstall
+        ) {
             try Auth.auth().signOut()
         }
     }
@@ -92,15 +163,26 @@ public enum FirebaseConfigurator {
     /// exact outcome this exists to prevent. So a failure leaves the key unset and the next
     /// launch tries again.
     ///
+    /// With ``SessionAfterReinstall/keep`` it never signs out, but still records the launch. An
+    /// app that later switches back to ``SessionAfterReinstall/signOut`` would otherwise read its
+    /// next launch as a fresh install and sign out the user it had been keeping.
+    ///
     /// - Parameters:
     ///   - defaults: Where the first-launch flag lives. Deleting the app clears it, which is what
     ///     makes its absence mean "fresh install".
+    ///   - sessionAfterReinstall: Whether a fresh install clears the session or keeps it.
     ///   - signOut: Clears the stored session. Throwing means the session is still there.
     static func clearStoredSessionOnFirstLaunch(
         defaults: UserDefaults,
+        sessionAfterReinstall: SessionAfterReinstall = .signOut,
         signOut: () throws -> Void
     ) {
         guard !defaults.bool(forKey: firstLaunchKey) else { return }
+
+        if case .keep = sessionAfterReinstall {
+            defaults.set(true, forKey: firstLaunchKey)
+            return
+        }
 
         do {
             try signOut()
