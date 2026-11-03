@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.2.0] - 2026-11-03
+
 ### Added
 
 - **Retrying failed post-authentication work without signing out.**
