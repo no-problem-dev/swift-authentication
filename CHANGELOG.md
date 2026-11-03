@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.1.0] - 2026-11-03
+
 ### Added
 
 - **Keeping the session across a reinstall, for apps that sign in only anonymously.**
