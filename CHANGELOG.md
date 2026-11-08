@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.2.1] - 2026-11-08
+
+### Changed
+
+- swift-docc-plugin への依存を外した（DocC は Xcode で開く）
+
 ## [10.2.0] - 2026-11-03
 
 ### Added
@@ -579,7 +585,8 @@ clean architecture that splits targets by responsibility and by vendor dependenc
 - Authentication state management
 - iOS 17.0+ and macOS 14.0+ support
 
-[Unreleased]: https://github.com/no-problem-dev/swift-authentication/compare/5.2.0...HEAD
+[Unreleased]: https://github.com/no-problem-dev/swift-authentication/compare/10.2.1...HEAD
+[10.2.1]: https://github.com/no-problem-dev/swift-authentication/compare/10.2.0...10.2.1
 [5.2.0]: https://github.com/no-problem-dev/swift-authentication/compare/5.1.0...5.2.0
 [5.1.0]: https://github.com/no-problem-dev/swift-authentication/compare/5.0.1...5.1.0
 [1.1.9]: https://github.com/no-problem-dev/swift-authentication/compare/v1.1.8...v1.1.9
