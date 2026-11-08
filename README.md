@@ -206,7 +206,7 @@ try await firebaseAuthenticator.deleteAccount()
 
 ## Documentation
 
-API reference for every module: [no-problem-dev.github.io/swift-authentication](https://no-problem-dev.github.io/swift-authentication/documentation/).
+API reference for every module: the DocC catalog in each module under [`Sources/`](Sources).
 
 ## Installation
 
