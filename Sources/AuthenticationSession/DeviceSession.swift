@@ -16,6 +16,7 @@ actor DeviceSession {
     private let server: SessionServer
     private let installID: @Sendable () -> String
     private let legacySource: (any LegacySessionSource)?
+    private let anonymous: AnonymousSessions
 
     private var cached: AuthSession?
     private var isLoaded = false
@@ -29,12 +30,14 @@ actor DeviceSession {
         store: any SessionStore,
         server: SessionServer,
         installID: @escaping @Sendable () -> String,
-        legacySource: (any LegacySessionSource)?
+        legacySource: (any LegacySessionSource)?,
+        anonymous: AnonymousSessions
     ) {
         self.store = store
         self.server = server
         self.installID = installID
         self.legacySource = legacySource
+        self.anonymous = anonymous
     }
 
     // MARK: - Reading
@@ -70,7 +73,8 @@ actor DeviceSession {
     // MARK: - Establishing
 
     /// Returns the session to use from now on: the stored one, else one exchanged from the
-    /// legacy source, else a new anonymous one. Concurrent calls share one attempt.
+    /// legacy source, else a new anonymous one — or, with anonymous sessions disabled,
+    /// ``AuthError/notAuthenticated``. Concurrent calls share one attempt.
     func establish() async throws -> AuthSession {
         if let establishing { return try await establishing.value }
         let task = Task { try await self.performEstablish() }
@@ -92,31 +96,30 @@ actor DeviceSession {
         }
 
         if let legacySource {
-            let exchanged: AuthSession?
             do {
-                exchanged = try await exchangeLegacySession(from: legacySource)
-            } catch let error as SessionServerError where error.isAccountDeleted {
-                // The person deleted that account. Nothing is left to keep, so start anew.
-                try? await legacySource.discardLegacySession()
-                exchanged = nil
+                if let exchanged = try await exchangeLegacySession(from: legacySource) { return exchanged }
+            } catch let error as SessionServerError where error.isAccountDeleted || error.isLegacyCredentialRejected {
+                // The person deleted that account, or Google will never accept the credential
+                // again. Retrying cannot help: forget it and start the way a new device does.
+                try? await legacySource.discard()
             } catch {
-                // Never fall back to a new anonymous user here: it would strand the person's
-                // records under the legacy user id. The next attempt tries again.
+                // Never start over here: it would strand the person's records under the legacy
+                // user id. The next attempt — a later launch, the network back — tries again.
                 throw AuthError.sessionExchangeFailed(error)
             }
-            if let exchanged { return exchanged }
         }
 
+        guard anonymous == .enabled else { throw AuthError.notAuthenticated }
         let session = try await server.startAnonymous(installID: installID())
         try replace(with: session)
         return session
     }
 
     private func exchangeLegacySession(from source: any LegacySessionSource) async throws -> AuthSession? {
-        guard let idToken = try await source.legacyIDToken() else { return nil }
-        let session = try await server.exchangeLegacy(idToken: idToken, installID: installID())
+        guard let credential = try await source.legacyCredential() else { return nil }
+        let session = try await server.exchangeLegacy(credential, installID: installID())
         try replace(with: session)
-        try? await source.discardLegacySession()
+        try? await source.discard()
         return session
     }
 
@@ -208,9 +211,15 @@ actor DeviceSession {
     /// The device forgets first and the server is told afterwards, best effort: signing out
     /// has to work offline, and a refresh token the device no longer holds cannot be used.
     func signOut() async throws {
-        let accessToken = try current()?.accessToken
+        let accessToken: String?
+        do {
+            accessToken = try current()?.accessToken
+        } catch is KeychainSessionStore.UndecodableItem {
+            // Nothing to revoke on the server; removing the item is what signing out is for.
+            accessToken = nil
+        }
         try replace(with: nil)
-        try? await legacySource?.discardLegacySession()
+        try? await legacySource?.discard()
         if let accessToken {
             try? await server.signOut(bearer: accessToken)
         }
@@ -223,7 +232,7 @@ actor DeviceSession {
         }
         try await server.deleteAccount(path: path, bearer: valid.accessToken, appleAuthorizationCode: appleAuthorizationCode)
         try replace(with: nil)
-        try? await legacySource?.discardLegacySession()
+        try? await legacySource?.discard()
     }
 
     // MARK: - Refreshing

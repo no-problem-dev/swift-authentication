@@ -1,26 +1,38 @@
 import Foundation
 
+/// What an earlier version of the app left on the device, for the session server to trade for a
+/// session of its own.
+public enum LegacyCredential: Sendable, Equatable {
+    /// A Firebase ID token, obtained through the Firebase SDK. Sent as `{ idToken }`.
+    case firebaseIDToken(String)
+    /// The refresh token Firebase Authentication stored on the device, read without the SDK.
+    /// Sent as `{ refreshToken }`; the server trades it at Google for an ID token, so the device
+    /// never talks to Google itself.
+    case firebaseRefreshToken(String)
+}
+
 /// A session an earlier version of the app left on the device, which the session server can
 /// trade for one of its own.
 ///
 /// An app that used to sign in through another service — Firebase Authentication, say — hands
 /// one to `SessionAuthenticator`. When the device has no session yet, the authenticator asks
-/// for the old one's ID token and exchanges it, so the person keeps their user id and
-/// everything stored under it, instead of starting over as a new anonymous user.
-/// `swift-authentication-firebase` ships the Firebase conformance. An app that never used
-/// another service passes none.
+/// for the old session's credential and exchanges it at `/v1/auth/firebase`, so the person keeps
+/// their user id and everything stored under it, instead of starting over.
+/// `swift-authentication-firebase` ships the Firebase conformance, which reads the keychain
+/// without the Firebase SDK. An app that never used another service passes none.
 public protocol LegacySessionSource: Sendable {
-    /// Returns an ID token for the session the earlier version left, or `nil` when there is
+    /// Returns the credential of the session the earlier version left, or `nil` when there is
     /// none on this device.
     ///
-    /// - Throws: Whatever stopped the token from being obtained — no network, say. The
-    ///   authenticator then fails rather than starting a new anonymous user, and tries again
-    ///   the next time it is asked to establish a session.
-    func legacyIDToken() async throws -> String?
+    /// - Throws: Whatever stopped the credential from being read — a keychain that is locked,
+    ///   an item in a shape this version does not know. The authenticator then fails rather
+    ///   than starting over, and tries again the next time it is asked to establish a session.
+    func legacyCredential() async throws -> LegacyCredential?
 
-    /// Forgets the earlier session, once it has been exchanged or the person signed out.
+    /// Forgets the earlier session: once it has been exchanged, once the server said it can never
+    /// be exchanged, or when the person signed out.
     ///
     /// Without this, signing out and starting again would find the old session still on the
     /// device and exchange it back into the account the person just left.
-    func discardLegacySession() async throws
+    func discard() async throws
 }

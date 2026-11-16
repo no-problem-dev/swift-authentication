@@ -20,6 +20,17 @@ import Authentication
 /// let store = AuthenticationStore(authenticator: authenticator, credentialProviders: [AppleCredentialProvider()])
 /// let apiToken = authenticator.tokenProvider.tokenSource
 /// ```
+/// Whether ``SessionAuthenticator`` opens an anonymous session for a device with nobody to sign
+/// in as.
+public enum AnonymousSessions: Sendable, Equatable {
+    /// Open one at `/v1/auth/anonymous`, so every device has a user id from its first launch.
+    case enabled
+    /// Never open one: a device with no stored session and no legacy session to exchange stays
+    /// signed out until the person signs in with Apple or Google. For apps where signing in is
+    /// optional and nothing is kept for someone who has not.
+    case disabled
+}
+
 public final class SessionAuthenticator: Authenticator {
     let deviceSession: DeviceSession
     private let accountDeletionPath: String
@@ -34,6 +45,8 @@ public final class SessionAuthenticator: Authenticator {
     ///   - store: Where the session is kept. The keychain by default.
     ///   - legacySource: The session an earlier version of the app left on the device, for apps
     ///     moving off another authentication service. `nil` for an app that never had one.
+    ///   - anonymous: Whether a device with nobody to sign in as gets an anonymous session, or
+    ///     stays signed out. Enabled by default.
     ///   - accountDeletionPath: The app's endpoint, relative to `baseURL`, that deletes the
     ///     signed-in account and everything it owns.
     ///   - urlSession: The session requests go through.
@@ -44,6 +57,7 @@ public final class SessionAuthenticator: Authenticator {
         installID: @escaping @Sendable () -> String,
         store: any SessionStore = KeychainSessionStore(),
         legacySource: (any LegacySessionSource)? = nil,
+        anonymous: AnonymousSessions = .enabled,
         accountDeletionPath: String = "v1/account",
         urlSession: URLSession = .shared,
         requestTimeout: TimeInterval = 20
@@ -52,7 +66,8 @@ public final class SessionAuthenticator: Authenticator {
             store: store,
             server: SessionServer(baseURL: baseURL, urlSession: urlSession, requestTimeout: requestTimeout),
             installID: installID,
-            legacySource: legacySource
+            legacySource: legacySource,
+            anonymous: anonymous
         )
         self.accountDeletionPath = accountDeletionPath
     }
@@ -69,15 +84,22 @@ public final class SessionAuthenticator: Authenticator {
     /// 1. A stored session is used as it is, refreshed first when its access token is close to
     ///    expiry. When the refresh cannot reach the server the stored session is still used.
     /// 2. With none stored, a `legacySource` that still holds an earlier session has it
-    ///    exchanged at `/v1/auth/firebase`, keeping the person's user id.
-    /// 3. Otherwise a new anonymous session is opened at `/v1/auth/anonymous`.
+    ///    exchanged at `/v1/auth/firebase`, keeping the person's user id. When the server says
+    ///    it can never be exchanged — 410 `account_deleted`, or 401
+    ///    `invalid_firebase_refresh_token` because Google refused the refresh token for good —
+    ///    the legacy session is discarded and this goes on to step 3.
+    /// 3. Otherwise a new anonymous session is opened at `/v1/auth/anonymous` — unless
+    ///    `anonymous` is ``AnonymousSessions/disabled``, when the device stays signed out.
     ///
     /// Concurrent calls share one attempt, so two callers at launch never open two accounts.
     ///
-    /// - Throws: ``AuthError/sessionExchangeFailed(_:)`` when step 2 fails. No anonymous session
+    /// - Throws: ``AuthError/sessionExchangeFailed(_:)`` when step 2 failed in a way that may
+    ///   pass — no network, a 503 from the server, a keychain that is still locked. No session
     ///   is opened in its place — that would strand the person's records — so call this again
-    ///   later, when the network is back. ``SessionServerError`` when step 3 fails, and
-    ///   ``KeychainSessionStore/Failure`` when the stored session could not be read.
+    ///   later. ``AuthError/notAuthenticated`` when anonymous sessions are disabled and there
+    ///   was nobody to sign in as. ``SessionServerError`` when step 3 fails, and
+    ///   ``KeychainSessionStore/Failure`` or ``KeychainSessionStore/UndecodableItem`` when the
+    ///   stored session could not be read.
     @discardableResult
     public func establishSession() async throws -> AuthUser {
         try await deviceSession.establish().user.authUser
@@ -92,7 +114,8 @@ public final class SessionAuthenticator: Authenticator {
     ///
     /// ``AuthCredential/anonymous`` goes through ``establishSession()``: it returns the stored
     /// session's user when there is one, and exchanges a legacy session before it opens a new
-    /// anonymous one. To start over as a new anonymous user, call ``signOut()`` first.
+    /// anonymous one — or throws ``AuthError/notAuthenticated`` when anonymous sessions are
+    /// disabled. To start over as a new anonymous user, call ``signOut()`` first.
     ///
     /// An Apple or Google credential signs in as the account it belongs to — created on the
     /// server when there is none — and replaces the current session. Use ``link(with:)`` to
@@ -198,6 +221,9 @@ public final class SessionAuthenticator: Authenticator {
     /// Works offline: the revocation is best effort, and the device no longer holds the refresh
     /// token either way. A `legacySource` is told to forget its session too, so the next
     /// ``establishSession()`` opens a new anonymous user instead of exchanging it back.
+    ///
+    /// Also the way out of a stored item that is not a session
+    /// (``KeychainSessionStore/UndecodableItem``): it is removed like any other.
     ///
     /// - Throws: ``KeychainSessionStore/Failure`` when the stored session could not be removed.
     public func signOut() async throws {
