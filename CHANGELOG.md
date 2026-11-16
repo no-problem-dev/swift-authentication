@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.1.0] - 2026-11-16
+
+### Added
+
+- `SessionAuthenticator.findExisting(with:)` and `PendingAccountSwitch`: `signInExisting(with:)` in
+  two steps. The server's `sign_in_existing` answer is held without replacing the device's
+  session, so a screen can ask "replace the records on this device?" only once it knows there is
+  an account to switch to. `commit()` makes the switch (revoking the previous device, as
+  `signInExisting` does); `cancel()` keeps the current session and revokes the session the server
+  issued for the switch. `nil` when no account owns the credential.
+
 ## [11.0.0] - 2026-11-16
 
 The package now signs in with sessions the app's own server issues. Firebase and the REST

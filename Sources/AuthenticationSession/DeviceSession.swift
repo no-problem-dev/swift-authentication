@@ -132,14 +132,32 @@ actor DeviceSession {
     /// Signs in to the account a credential belongs to, or returns `nil` — touching nothing —
     /// when it belongs to none.
     func signInExisting(with credential: AuthCredential) async throws -> AuthSession? {
-        let session: AuthSession
+        guard let session = try await findExisting(with: credential) else { return nil }
+        try await commitSwitch(to: session)
+        return session
+    }
+
+    /// Asks the server for a session of the account a credential belongs to, without keeping it:
+    /// the device's session stays as it is until ``commitSwitch(to:)``. `nil` when the credential
+    /// belongs to no account.
+    func findExisting(with credential: AuthCredential) async throws -> AuthSession? {
         do {
-            session = try await server.exchange(credential, mode: .signInExisting, installID: installID(), bearer: nil)
+            return try await server.exchange(credential, mode: .signInExisting, installID: installID(), bearer: nil)
         } catch let error as SessionServerError where error.status == 404 {
             return nil
         }
+    }
+
+    /// Keeps a session ``findExisting(with:)`` returned, replacing the current one.
+    func commitSwitch(to session: AuthSession) async throws {
         try await switchTo(session)
-        return session
+    }
+
+    /// Throws away a session ``findExisting(with:)`` returned: its device is revoked on the server,
+    /// best effort. The device's own session is not touched — the server issued the found session
+    /// a device of its own, so even for the same user nothing else is revoked.
+    func discardFound(_ session: AuthSession) async {
+        try? await server.signOut(bearer: session.accessToken)
     }
 
     /// Replaces the session, and when that changed the user, revokes the previous one's device

@@ -159,6 +159,17 @@ let found = try await store.signInExisting(using: .apple)
 if !found { /* この Apple ID のアカウントはまだ無い */ }
 ```
 
+切り替える前に本人に確かめたいとき（アカウントがあると分かってから確かめる）は `SessionAuthenticator.findExisting(with:)` を使う。`commit()` するまで端末のセッションは替わらない。
+
+```swift
+guard let pending = try await authenticator.findExisting(with: credential) else { return /* 見つからない */ }
+if await confirmReplace(pending.user) {
+    try await pending.commit()
+} else {
+    await pending.cancel()   // 切り替えのためにサーバーが出したセッションを無効にする
+}
+```
+
 ### 消したアカウント
 
 消したアカウントには、サーバーが 410 `account_deleted` を返す。`AuthError.accountDeleted` として届く。消したアカウントの古いセッションは忘れ、代わりに新しい匿名のセッションを作る。
