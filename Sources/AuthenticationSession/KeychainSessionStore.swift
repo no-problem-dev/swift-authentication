@@ -106,7 +106,7 @@ public struct KeychainSessionStore: SessionStore {
     public func clear() throws {
         let status = SecItemDelete(baseQuery as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw Failure(status: status)
+            throw Self.failure(status)
         }
     }
 

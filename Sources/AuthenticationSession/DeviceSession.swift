@@ -25,6 +25,9 @@ actor DeviceSession {
     private var refreshing: Task<AuthSession, any Error>?
     private var establishing: Task<AuthSession, any Error>?
     private var observers: [UUID: AsyncStream<AuthUser?>.Continuation] = [:]
+    /// The user id observers were last told about. An observer that arrives while the store
+    /// cannot be read is told nobody, so the first successful read tells them again.
+    private var announcedUserID: String?
 
     init(
         store: any SessionStore,
@@ -46,6 +49,7 @@ actor DeviceSession {
         if !isLoaded {
             cached = try store.load()
             isLoaded = true
+            announceIfChanged()
         }
         return cached
     }
@@ -275,18 +279,26 @@ actor DeviceSession {
         } else {
             try store.clear()
         }
-        let previousUserID = cached?.user.id
         cached = session
         isLoaded = true
         generation += 1
-        if session?.user.id != previousUserID {
-            broadcast(session?.user.authUser)
-        }
+        announceIfChanged()
     }
 
+    /// Tells observers the cached user when it is not the one they last heard about.
+    private func announceIfChanged() {
+        guard cached?.user.id != announcedUserID else { return }
+        announcedUserID = cached?.user.id
+        broadcast(cached?.user.authUser)
+    }
+
+    /// Adds an observer and tells it the current user — nobody while the store cannot be read,
+    /// until a later read finds the session and tells every observer again.
     func observe(_ id: UUID, _ continuation: AsyncStream<AuthUser?>.Continuation) {
+        // Read before registering, so a first read that announces does not reach this one twice.
+        let user = (try? current())?.user.authUser
         observers[id] = continuation
-        continuation.yield((try? current())?.user.authUser)
+        continuation.yield(user)
     }
 
     func stopObserving(_ id: UUID) {

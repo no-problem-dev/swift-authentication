@@ -68,14 +68,20 @@ public final class AuthenticationStore {
     ///
     /// The exchanged user is discarded on purpose. Success makes
     /// ``Authenticator/authStateChanges()`` emit, and that path — not this one — advances
-    /// ``state``. On failure ``state`` becomes an error before throwing.
+    /// ``state``. On failure ``state`` becomes an error before throwing — except while the
+    /// device's protected data is unavailable, which is a wait, not a failure.
     ///
     /// - Parameter credential: A credential from a provider, or ``AuthCredential/anonymous``.
-    /// - Throws: ``AuthError/accountExistsWithDifferentProvider(provider:email:)`` unchanged
-    ///   when the authenticator raised it, ``AuthError/sessionExchangeFailed(_:)`` otherwise.
+    /// - Throws: ``ProtectedDataUnavailable`` unchanged, with ``state`` left as it was: the
+    ///   keychain is locked, so call this again once it is not.
+    ///   ``AuthError/accountExistsWithDifferentProvider(provider:email:)`` and
+    ///   ``AuthError/accountDeleted`` unchanged when the authenticator raised them,
+    ///   ``AuthError/sessionExchangeFailed(_:)`` otherwise.
     public func signIn(with credential: AuthCredential) async throws {
         do {
             _ = try await authenticator.signIn(with: credential)
+        } catch let error as ProtectedDataUnavailable {
+            throw error
         } catch {
             let authError = Self.exchangeFailure(error)
             state = .error(authError)
@@ -112,13 +118,16 @@ public final class AuthenticationStore {
     /// - Parameter credential: A provider credential.
     /// - Throws: ``AuthError/credentialAlreadyInUse(_:)`` when another account already owns
     ///   the credential — pass its payload to ``signIn(resolving:)`` if the person chooses to
-    ///   switch to that account. ``AuthError/notAuthenticated`` when nobody is signed in, and
+    ///   switch to that account. ``AuthError/notAuthenticated`` when nobody is signed in,
+    ///   ``ProtectedDataUnavailable`` unchanged while the keychain is locked, and
     ///   ``AuthError/linkFailed(_:)`` for anything else.
     public func link(with credential: AuthCredential) async throws {
         let linked: AuthUser
         do {
             linked = try await authenticator.link(with: credential)
         } catch let error as AuthError {
+            throw error
+        } catch let error as ProtectedDataUnavailable {
             throw error
         } catch {
             throw AuthError.linkFailed(error)
@@ -155,8 +164,8 @@ public final class AuthenticationStore {
     /// - Throws: ``AuthError/unsupportedProvider(_:)``, ``AuthError/cancelled`` and
     ///   ``AuthError/credentialAcquisitionFailed(_:)`` as for ``signIn(using:)``.
     ///   ``AuthError/accountExistsWithDifferentProvider(provider:email:)`` and
-    ///   ``AuthError/accountDeleted`` unchanged, ``AuthError/sessionExchangeFailed(_:)`` for
-    ///   anything else.
+    ///   ``AuthError/accountDeleted`` unchanged, ``ProtectedDataUnavailable`` unchanged while the
+    ///   keychain is locked, ``AuthError/sessionExchangeFailed(_:)`` for anything else.
     @discardableResult
     public func signInExisting(using providerID: AuthProviderID) async throws -> Bool {
         guard let provider = credentialProviders[providerID] else {
@@ -185,8 +194,8 @@ public final class AuthenticationStore {
     ///   provider is registered for ``CredentialCollision/provider``, ``AuthError/cancelled``
     ///   when the person backs out of the provider's sheet,
     ///   ``AuthError/accountExistsWithDifferentProvider(provider:email:)`` unchanged when the
-    ///   authenticator raised it, and ``AuthError/sessionExchangeFailed(_:)`` when the exchange
-    ///   fails otherwise.
+    ///   authenticator raised it, ``ProtectedDataUnavailable`` unchanged while the keychain is
+    ///   locked, and ``AuthError/sessionExchangeFailed(_:)`` when the exchange fails otherwise.
     public func signIn(resolving collision: CredentialCollision) async throws {
         do {
             _ = try await authenticator.signIn(resolving: collision)
@@ -208,13 +217,15 @@ public final class AuthenticationStore {
         }
     }
 
-    /// Wraps a failed exchange, except a refusal the person can act on, which keeps its name.
-    private static func exchangeFailure(_ error: any Error) -> AuthError {
+    /// Wraps a failed exchange, except a refusal the person can act on, which keeps its name,
+    /// and a locked keychain, which is a wait and not a failed exchange.
+    private static func exchangeFailure(_ error: any Error) -> any Error {
+        if error is ProtectedDataUnavailable { return error }
         if let authError = error as? AuthError,
            authError.code == .accountExistsWithDifferentProvider || authError.code == .accountDeleted {
             return authError
         }
-        return .sessionExchangeFailed(error)
+        return AuthError.sessionExchangeFailed(error)
     }
 
     // MARK: - Sign out and delete
@@ -224,11 +235,14 @@ public final class AuthenticationStore {
     /// ``state`` is not touched here; it follows once the authenticator reports the user as
     /// gone, which keeps sign-outs triggered elsewhere on the same path as this one.
     ///
-    /// - Throws: ``AuthError/signOutFailed(_:)``, after which stored credentials may still be
-    ///   on the device.
+    /// - Throws: ``ProtectedDataUnavailable`` unchanged while the keychain is locked, and
+    ///   ``AuthError/signOutFailed(_:)`` otherwise. Either way stored credentials may still be on
+    ///   the device.
     public func signOut() async throws {
         do {
             try await authenticator.signOut()
+        } catch let error as ProtectedDataUnavailable {
+            throw error
         } catch {
             throw AuthError.signOutFailed(error)
         }
@@ -246,12 +260,15 @@ public final class AuthenticationStore {
     /// through its stream.
     ///
     /// - Throws: ``AuthError/cancelled`` unchanged when the person backs out of the Apple
-    ///   sheet — nothing was deleted. ``AuthError/deleteAccountFailed(_:)`` for everything
-    ///   else, including ``AuthError/notAuthenticated`` when there was no session.
+    ///   sheet — nothing was deleted. ``ProtectedDataUnavailable`` unchanged while the keychain
+    ///   is locked. ``AuthError/deleteAccountFailed(_:)`` for everything else, including
+    ///   ``AuthError/notAuthenticated`` when there was no session.
     public func deleteAccount() async throws {
         let appleAuthorizationCode = try await appleAuthorizationCodeForDeletion()
         do {
             try await authenticator.deleteAccount(appleAuthorizationCode: appleAuthorizationCode)
+        } catch let error as ProtectedDataUnavailable {
+            throw error
         } catch {
             throw AuthError.deleteAccountFailed(error)
         }

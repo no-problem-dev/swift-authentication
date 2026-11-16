@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [12.1.1] - 2026-11-16
+
+An app launched while the keychain was locked now shows the person once it is unlocked, instead
+of staying on its launch screen until the next launch.
+
+### Fixed
+
+- `authStateChanges()` told an observer that started while the keychain was locked that nobody
+  was signed in, and never corrected it: the read after unlock found the stored session without
+  telling anyone. The first read that finds it — `establishSession()` called again after unlock —
+  now emits its user, so `AuthenticationStore.state` becomes `.authenticated`.
+- `AuthenticationStore.signIn(with:)` wrapped `ProtectedDataUnavailable` in
+  `AuthError.sessionExchangeFailed` and set `state` to `.error`. It is now thrown as it is and
+  `state` is left alone: waiting for the unlock is not a failure.
+- The same for the store's `signInExisting(using:)`, `signIn(resolving:)`, `link(with:)`,
+  `signOut()` and `deleteAccount()`, and for `SessionAuthenticator.link(with:)`: none of them wraps
+  `ProtectedDataUnavailable` any more.
+- `KeychainSessionStore.clear()` throws `ProtectedDataUnavailable` for
+  `errSecInteractionNotAllowed`, as `load()` and `save(_:)` do, in place of `Failure`.
+
 ## [12.1.0] - 2026-11-16
 
 A launch the person did not start — prewarming, a background task — before the first unlock or
