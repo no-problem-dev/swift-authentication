@@ -159,6 +159,18 @@ let found = try await store.signInExisting(using: .apple)
 if !found { /* No account uses this Apple ID yet. */ }
 ```
 
+To ask the person before the switch — and only when there is an account to switch to — use
+`SessionAuthenticator.findExisting(with:)`. The device keeps its session until you commit:
+
+```swift
+guard let pending = try await authenticator.findExisting(with: credential) else { return /* not found */ }
+if await confirmReplace(pending.user) {
+    try await pending.commit()
+} else {
+    await pending.cancel()   // revokes the session the server issued for the switch
+}
+```
+
 ### Deleted accounts
 
 The server answers 410 `account_deleted` for a deleted account; it arrives as `AuthError.accountDeleted`. A legacy session that belonged to a deleted account is forgotten and a new anonymous session opened in its place.

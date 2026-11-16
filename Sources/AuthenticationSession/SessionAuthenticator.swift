@@ -123,6 +123,26 @@ public final class SessionAuthenticator: Authenticator {
         }
     }
 
+    /// Finds the account an Apple or Google credential already belongs to, without switching to it.
+    ///
+    /// The first half of ``signInExisting(with:)``, for a screen that asks the person before the
+    /// switch — "the records on this device will be replaced" — and should ask only once it knows
+    /// there is an account to switch to. The server's answer is held in the returned
+    /// ``PendingAccountSwitch``; the device's session does not change until
+    /// ``PendingAccountSwitch/commit()``. Call ``PendingAccountSwitch/cancel()`` when the person
+    /// backs out, so the session the server issued for the switch is revoked.
+    ///
+    /// - Returns: The pending switch, or `nil` when the credential belongs to no account — the
+    ///   server then created and linked nothing.
+    /// - Throws: As for ``signIn(with:)``.
+    public func findExisting(with credential: AuthCredential) async throws -> PendingAccountSwitch? {
+        try await Self.namingDeletion {
+            try await deviceSession.findExisting(with: credential).map {
+                PendingAccountSwitch(session: $0, deviceSession: deviceSession)
+            }
+        }
+    }
+
     /// Links an Apple or Google credential to the signed-in account, keeping its user id.
     ///
     /// - Throws: ``AuthError/notAuthenticated`` when nobody is signed in.

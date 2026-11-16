@@ -300,6 +300,61 @@ struct SessionAuthenticatorTests {
         #expect(!worker.paths.contains("POST /v1/auth/sign-out"))
     }
 
+    @Test("findExisting holds the switch until commit")
+    func findExistingThenCommit() async throws {
+        let worker = FakeWorker()
+        worker.seedAccount(userID: "owner-1", subject: "apple:apple-sub-1", provider: "apple")
+        let store = InMemorySessionStore()
+        let authenticator = make(worker, store: store)
+        let anonymous = try await authenticator.establishSession()
+        let before = try store.load()
+
+        let pending = try #require(try await authenticator.findExisting(with: apple))
+
+        #expect(pending.user.id == "owner-1")
+        #expect(try store.load() == before)
+        #expect(await authenticator.currentUser() == anonymous)
+        #expect(!worker.paths.contains("POST /v1/auth/sign-out"))
+
+        let user = try await pending.commit()
+
+        #expect(user.id == "owner-1")
+        #expect(await authenticator.currentUser()?.id == "owner-1")
+        let signOut = try #require(worker.recorded.last { $0.path == "/v1/auth/sign-out" })
+        #expect(signOut.authorization == "Bearer \(before?.accessToken ?? "")")
+    }
+
+    @Test("cancelling a found switch keeps the session and revokes the found one")
+    func findExistingThenCancel() async throws {
+        let worker = FakeWorker()
+        worker.seedAccount(userID: "owner-1", subject: "apple:apple-sub-1", provider: "apple")
+        let store = InMemorySessionStore()
+        let authenticator = make(worker, store: store)
+        let anonymous = try await authenticator.establishSession()
+        let before = try store.load()
+
+        let pending = try #require(try await authenticator.findExisting(with: apple))
+        await pending.cancel()
+
+        #expect(try store.load() == before)
+        #expect(await authenticator.currentUser() == anonymous)
+        let signOut = try #require(worker.recorded.last { $0.path == "/v1/auth/sign-out" })
+        #expect(signOut.authorization == "Bearer \(pending.session.accessToken)")
+    }
+
+    @Test("findExisting for a credential nobody uses returns nil and touches nothing")
+    func findExistingNotFound() async throws {
+        let worker = FakeWorker()
+        let store = InMemorySessionStore()
+        let authenticator = make(worker, store: store)
+        try await authenticator.establishSession()
+        let before = try store.load()
+
+        #expect(try await authenticator.findExisting(with: apple) == nil)
+        #expect(try store.load() == before)
+        #expect(!worker.paths.contains("POST /v1/auth/sign-out"))
+    }
+
     @Test("a deleted account is reported as accountDeleted")
     func deletedAccountIsNamed() async throws {
         let worker = FakeWorker()
