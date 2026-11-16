@@ -123,7 +123,7 @@ struct MainView: View {
 `establishSession()` が、端末が誰としてサインインするかを決める。
 
 1. 保存済みのセッションがあれば、それを使う。アクセストークンの期限が5分を切っていれば先に再取得する。再取得がサーバーに届かなくても、保存済みのセッションを使う
-2. 無ければ、`LegacySessionSource` が前のバージョンのセッションを持っているとき、`/v1/auth/firebase` で交換する（持っている物に合わせて `{ idToken }` か `{ refreshToken }`）。ユーザーの ID は変わらない。**届かない・503 など、やり直せば通るかもしれない失敗では、セッションを作らない**（作ると、その人の記録から外れる）。エラーを投げるので、あとでもう一度呼ぶ。サーバーが「二度と替えられない」と答えたとき（410 `account_deleted`、または Google がリフレッシュトークンを断った 401 `invalid_firebase_refresh_token`）は、前のセッションを消して 3 に進む
+2. 無ければ、`LegacySessionSource` が前のバージョンのセッションを持っているとき、`/v1/auth/firebase` で交換する（持っている物に合わせて `{ idToken }` か `{ refreshToken }`）。ユーザーの ID は変わらない。**届かない・503 など、やり直せば通るかもしれない失敗では、セッションを作らない**（作ると、その人の記録から外れる）。エラーを投げるので、あとでもう一度呼ぶ。サーバーが「二度と替えられない」と答えたとき（410 `account_deleted`、または Google がリフレッシュトークンを断った 401 `legacy_credential_rejected`）は、前のセッションを消して 3 に進む
 3. どちらも無ければ、`/v1/auth/anonymous` で新しい匿名のセッションを作る。`SessionAuthenticator(…, anonymous: .disabled)`（サインインが任意のアプリ）では作らず、`AuthError.notAuthenticated` を投げる。Apple・Google でサインインするまでサインアウトのまま
 
 `store.signIn(with: .anonymous)` も同じ手順を通る。同時に呼ばれたときは1回の試みを分け合う。

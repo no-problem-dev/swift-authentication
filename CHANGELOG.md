@@ -19,7 +19,7 @@ over the refresh token Firebase left in the keychain, and the server trades it a
   place of `legacyIDToken()`, and forgets it with `discard()`, in place of
   `discardLegacySession()`. The exchange at `/v1/auth/firebase` sends `{ idToken, installId }` or
   `{ refreshToken, installId }` accordingly.
-- A legacy exchange the server says can never succeed — 401 `invalid_firebase_refresh_token`,
+- A legacy exchange the server says can never succeed — 401 `legacy_credential_rejected`,
   Google refused the refresh token for good — discards the legacy session and goes on as a new
   device would, as a 410 `account_deleted` already did. Before, it threw on every launch forever.
   Only failures that may pass (no network, 503, a locked keychain) throw and are retried.

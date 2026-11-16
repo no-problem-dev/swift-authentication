@@ -22,10 +22,10 @@ public enum SessionServerError: Error, Equatable, Sendable {
     var isAccountDeleted: Bool { status == 410 }
 
     /// Whether the server said a legacy credential can never be exchanged: Google refused the
-    /// Firebase refresh token for good (401 `invalid_firebase_refresh_token` — the token was
+    /// Firebase refresh token for good (401 `legacy_credential_rejected` — the token was
     /// revoked or expired, the user disabled or deleted). Retrying cannot succeed.
     public var isLegacyCredentialRejected: Bool {
-        self == .rejected(status: 401, reason: "invalid_firebase_refresh_token")
+        self == .rejected(status: 401, reason: "legacy_credential_rejected")
     }
 
 }

@@ -86,7 +86,7 @@ public final class SessionAuthenticator: Authenticator {
     /// 2. With none stored, a `legacySource` that still holds an earlier session has it
     ///    exchanged at `/v1/auth/firebase`, keeping the person's user id. When the server says
     ///    it can never be exchanged — 410 `account_deleted`, or 401
-    ///    `invalid_firebase_refresh_token` because Google refused the refresh token for good —
+    ///    `legacy_credential_rejected` because Google refused the refresh token for good —
     ///    the legacy session is discarded and this goes on to step 3.
     /// 3. Otherwise a new anonymous session is opened at `/v1/auth/anonymous` — unless
     ///    `anonymous` is ``AnonymousSessions/disabled``, when the device stays signed out.
