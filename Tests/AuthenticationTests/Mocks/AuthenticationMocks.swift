@@ -22,6 +22,7 @@ final class MockAuthenticator: Authenticator {
     var unlinkedUser: AuthUser?
     /// What `signInExisting(with:)` finds; `nil` means no account owns the credential.
     var existingUser: AuthUser?
+    var existingError: (any Error)?
     /// What `currentUser()` reports.
     var storedUser: AuthUser?
 
@@ -68,6 +69,7 @@ final class MockAuthenticator: Authenticator {
 
     func signInExisting(with credential: AuthCredential) async throws -> AuthUser? {
         existingCredentials.append(credential)
+        if let existingError { throw existingError }
         if let existingUser { continuation.yield(existingUser) }
         return existingUser
     }

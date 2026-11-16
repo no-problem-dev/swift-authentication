@@ -110,7 +110,8 @@ public final class SessionAuthenticator: Authenticator {
         try await deviceSession.establish().user.authUser
     }
 
-    /// Returns the user of the stored session, without a request.
+    /// Returns the user of the stored session, without a request. `nil` also while the keychain
+    /// is locked; ``authStateChanges()`` emits the user once a later read finds the session.
     public func currentUser() async -> AuthUser? {
         try? await deviceSession.current()?.user.authUser
     }
@@ -176,11 +177,14 @@ public final class SessionAuthenticator: Authenticator {
     /// - Throws: ``AuthError/notAuthenticated`` when nobody is signed in.
     ///   ``AuthError/credentialAlreadyInUse(_:)`` when the server answers 409 because another
     ///   account owns the credential; ``signIn(resolving:)`` switches to it with the same token.
+    ///   ``ProtectedDataUnavailable`` unchanged while the keychain is locked.
     ///   ``AuthError/linkFailed(_:)`` for anything else.
     public func link(with credential: AuthCredential) async throws -> AuthUser {
         do {
             return try await deviceSession.link(credential).user.authUser
         } catch let error as AuthError {
+            throw error
+        } catch let error as ProtectedDataUnavailable {
             throw error
         } catch let error as SessionServerError where error.isAccountDeleted {
             throw AuthError.accountDeleted
@@ -230,7 +234,8 @@ public final class SessionAuthenticator: Authenticator {
     /// Also the way out of a stored item that is not a session
     /// (``KeychainSessionStore/UndecodableItem``): it is removed like any other.
     ///
-    /// - Throws: ``KeychainSessionStore/Failure`` when the stored session could not be removed.
+    /// - Throws: ``ProtectedDataUnavailable`` while the keychain is locked, and
+    ///   ``KeychainSessionStore/Failure`` when the stored session could not be removed otherwise.
     public func signOut() async throws {
         try await deviceSession.signOut()
     }
@@ -249,6 +254,9 @@ public final class SessionAuthenticator: Authenticator {
 
     /// A stream of the signed-in user: the current one first, then a value each time the user
     /// changes — `nil` on sign-out, on deletion, and when the server revoked the session.
+    ///
+    /// While the keychain is locked the first value is `nil`. The first read that finds the
+    /// stored session — ``establishSession()`` called again after unlock — emits its user.
     ///
     /// A refresh or a link keeps the user id and does not emit.
     public func authStateChanges() -> AsyncStream<AuthUser?> {

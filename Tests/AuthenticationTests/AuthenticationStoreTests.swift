@@ -155,6 +155,53 @@ struct AuthenticationStoreTests {
         #expect({ if case .error = store.state { return true } else { return false } }())
     }
 
+    // MARK: - Locked keychain
+
+    @Test("a locked keychain during sign-in is thrown as it is and leaves the state alone")
+    func signInWhileLocked() async {
+        let authenticator = MockAuthenticator()
+        authenticator.signInError = ProtectedDataUnavailable(status: -25308)
+        let store = AuthenticationStore(authenticator: authenticator)
+
+        await #expect(throws: ProtectedDataUnavailable(status: -25308)) {
+            try await store.signIn(with: .anonymous)
+        }
+        #expect(store.state == .checking, "waiting is not a failure")
+
+        authenticator.emit(AuthUser(id: "u1"))
+        await waitUntil { store.state.isAuthenticated }
+        #expect(store.state == .authenticated(AuthUser(id: "u1")))
+    }
+
+    @Test("a locked keychain is never wrapped into another error")
+    func lockedKeychainIsNotWrapped() async {
+        let locked = ProtectedDataUnavailable(status: -25308)
+        let authenticator = MockAuthenticator()
+        let provider = MockCredentialProvider(providerID: .apple)
+        let store = AuthenticationStore(authenticator: authenticator, credentialProviders: [provider])
+        authenticator.emit(AuthUser(id: "u1"))
+        await waitUntil { store.state.isAuthenticated }
+
+        authenticator.existingError = locked
+        await #expect(throws: locked, "signInExisting") { try await store.signInExisting(using: .apple) }
+
+        authenticator.resolveError = locked
+        await #expect(throws: locked, "signIn(resolving:)") {
+            try await store.signIn(resolving: CredentialCollision(credential: AuthCredential(provider: .apple, idToken: "t")))
+        }
+
+        authenticator.linkError = locked
+        await #expect(throws: locked, "link") { try await store.link(using: .apple) }
+
+        authenticator.signOutError = locked
+        await #expect(throws: locked, "signOut") { try await store.signOut() }
+
+        authenticator.deleteError = locked
+        await #expect(throws: locked, "deleteAccount") { try await store.deleteAccount() }
+
+        #expect(store.state == .authenticated(AuthUser(id: "u1")))
+    }
+
     @Test("signOut failure throws .signOutFailed")
     func signOutFailure() async {
         let authenticator = MockAuthenticator()

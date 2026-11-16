@@ -137,6 +137,74 @@ struct ProtectedDataTests {
         #expect(worker.paths.isEmpty)
     }
 
+    @Test("observers told nobody while locked hear the stored user once a read after unlock finds it")
+    func observersHearStoredUserAfterUnlock() async throws {
+        let worker = FakeWorker()
+        let store = LockableSessionStore(session)
+        let authenticator = SessionAuthenticator(
+            baseURL: worker.baseURL,
+            installID: { "install-1" },
+            store: store,
+            urlSession: worker.urlSession
+        )
+
+        store.locked = true
+        let heard = HeardUsers(authenticator.authStateChanges())
+        await heard.waitFor { $0 == [nil] }
+        await #expect(throws: ProtectedDataUnavailable.self) { try await authenticator.establishSession() }
+
+        store.locked = false
+        try await authenticator.establishSession()
+
+        await heard.waitFor { $0.count == 2 }
+        #expect(await heard.ids == [nil, "u1"])
+        #expect(worker.paths.isEmpty)
+    }
+
+    @Test("an observer that arrives after the session was read hears it once")
+    func lateObserverHearsUserOnce() async throws {
+        let worker = FakeWorker()
+        let authenticator = SessionAuthenticator(
+            baseURL: worker.baseURL,
+            installID: { "install-1" },
+            store: LockableSessionStore(session),
+            urlSession: worker.urlSession
+        )
+        var early = authenticator.authStateChanges().makeAsyncIterator()
+        #expect(await early.next()??.id == "u1")
+
+        try await authenticator.signOut()
+        #expect(await early.next() == .some(nil), "the next value is the sign-out, not a repeat of u1")
+    }
+
+    @MainActor
+    @Test("the store leaves signed-out for the stored user when establishSession succeeds after unlock")
+    func storeFollowsUnlock() async throws {
+        let worker = FakeWorker()
+        let store = LockableSessionStore(session)
+        store.locked = true
+        let authenticator = SessionAuthenticator(
+            baseURL: worker.baseURL,
+            installID: { "install-1" },
+            store: store,
+            urlSession: worker.urlSession
+        )
+        let authentication = AuthenticationStore(authenticator: authenticator)
+        await waitFor { authentication.state == .unauthenticated }
+
+        await #expect(throws: ProtectedDataUnavailable.self) {
+            try await authentication.signIn(with: .anonymous)
+        }
+        #expect(authentication.state == .unauthenticated, "not an error")
+
+        store.locked = false
+        try await authenticator.establishSession()
+        await waitFor { authentication.state.isAuthenticated }
+
+        #expect(authentication.state.user?.id == "u1")
+        #expect(worker.paths.isEmpty)
+    }
+
     @Test("a legacy session behind a locked keychain is neither exchanged nor replaced by an anonymous one")
     func lockedLegacySourceWaits() async throws {
         let worker = FakeWorker()
@@ -179,6 +247,35 @@ struct ProtectedDataTests {
 
         await #expect(throws: ProtectedDataUnavailable.self) { try await authenticator.establishSession() }
         #expect(worker.paths.isEmpty)
+    }
+}
+
+@MainActor
+private func waitFor(timeout: Duration = .seconds(2), _ condition: () -> Bool) async {
+    let deadline = ContinuousClock.now + timeout
+    while !condition() && ContinuousClock.now < deadline {
+        try? await Task.sleep(for: .milliseconds(2))
+    }
+}
+
+/// Collects what a stream of users emits, so a value that never comes fails a wait instead of
+/// hanging the test.
+actor HeardUsers {
+    private(set) var ids: [String?] = []
+
+    init(_ stream: AsyncStream<AuthUser?>) {
+        Task { await self.consume(stream) }
+    }
+
+    private func consume(_ stream: AsyncStream<AuthUser?>) async {
+        for await user in stream { ids.append(user?.id) }
+    }
+
+    func waitFor(timeout: Duration = .seconds(2), _ condition: ([String?]) -> Bool) async {
+        let deadline = ContinuousClock.now + timeout
+        while !condition(ids) && ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(2))
+        }
     }
 }
 

@@ -207,6 +207,8 @@ do {
 }
 ```
 
+Until then `authStateChanges()` reports nobody, so `AuthenticationStore.state` is `.unauthenticated`; the call that finds the stored session after unlock emits its user, and the state follows. `ProtectedDataUnavailable` is never wrapped in another error — the store's `signIn`, `link`, `signOut` and `deleteAccount` throw it as it is and leave `state` alone.
+
 ### Moving off Firebase Authentication
 
 Add [swift-authentication-firebase](https://github.com/no-problem-dev/swift-authentication-firebase) and pass its `FirebaseKeychainLegacySessionSource`. It reads the refresh token Firebase Authentication left in the keychain — without the Firebase SDK — and the server trades it at Google:
@@ -235,7 +237,7 @@ API reference for every module: the DocC catalog in each module under [`Sources/
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "12.1.0")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "12.1.1")
 ]
 ```
 
