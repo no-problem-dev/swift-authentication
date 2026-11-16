@@ -3,15 +3,12 @@ import Observation
 
 /// Owns the authentication session and publishes the state that views render from.
 ///
-/// It threads the three layers together — acquisition (``CredentialProvider``), exchange
-/// (``Authenticator``), post-authentication work (``PostAuthenticationAction``) — and exposes
-/// the result as an observable ``state``.
+/// It threads the two layers together — acquisition (``CredentialProvider``) and exchange
+/// (``Authenticator``) — and exposes the result as an observable ``state``. What the app does
+/// once someone is signed in is the app's business, not the store's.
 ///
-/// - Dependencies arrive through `init`, which is the only place a provider SDK enters the
-///   picture. This type imports none of them, so previews and tests build one from stubs.
-/// - It is the single owner of ``state`` and of the guarantee that provisioning runs once per
-///   user per session. Auth-state changes are consumed serially on the main actor, so a
-///   provider that reports the same user repeatedly still provisions once.
+/// Dependencies arrive through `init`, which is the only place a provider SDK enters the
+/// picture. This type imports none of them, so previews and tests build one from stubs.
 @MainActor
 @Observable
 public final class AuthenticationStore {
@@ -20,28 +17,21 @@ public final class AuthenticationStore {
     public private(set) var state: AuthenticationState = .checking
 
     @ObservationIgnored private let authenticator: any Authenticator
-    @ObservationIgnored private let postAuthentication: any PostAuthenticationAction
     @ObservationIgnored private let credentialProviders: [AuthProviderID: any CredentialProvider]
 
-    /// Where post-authentication work stands for the signed-in user. Claimed before any await,
-    /// so a repeated emission or a second retry does not run it twice. Cleared on sign-out.
-    @ObservationIgnored private var provisioning: Provisioning?
     @ObservationIgnored private var observationTask: Task<Void, Never>?
 
-    /// Assembles a session from its three layers and starts observing straight away.
+    /// Assembles a session from its layers and starts observing straight away.
     ///
     /// - Parameters:
-    ///   - authenticator: The exchange layer, for example `FirebaseAuthenticator`.
-    ///   - postAuthentication: Work to run after sign-in. Defaults to doing nothing.
+    ///   - authenticator: The exchange layer, for example `SessionAuthenticator`.
     ///   - credentialProviders: The providers sign-in may be requested for. When two report
     ///     the same identifier the last one wins.
     public init(
         authenticator: any Authenticator,
-        postAuthentication: any PostAuthenticationAction = NoPostAuthentication(),
         credentialProviders: [any CredentialProvider] = []
     ) {
         self.authenticator = authenticator
-        self.postAuthentication = postAuthentication
         self.credentialProviders = Dictionary(
             credentialProviders.map { ($0.providerID, $0) },
             uniquingKeysWith: { _, latest in latest }
@@ -77,8 +67,8 @@ public final class AuthenticationStore {
     /// Exchanges a credential you already hold for a session.
     ///
     /// The exchanged user is discarded on purpose. Success makes
-    /// ``Authenticator/authStateChanges()`` emit, and that path — not this one — provisions
-    /// the user and advances ``state``. On failure ``state`` becomes an error before throwing.
+    /// ``Authenticator/authStateChanges()`` emit, and that path — not this one — advances
+    /// ``state``. On failure ``state`` becomes an error before throwing.
     ///
     /// - Parameter credential: A credential from a provider, or ``AuthCredential/anonymous``.
     /// - Throws: ``AuthError/accountExistsWithDifferentProvider(provider:email:)`` unchanged
@@ -88,34 +78,9 @@ public final class AuthenticationStore {
             _ = try await authenticator.signIn(with: credential)
         } catch {
             let authError = Self.exchangeFailure(error)
-            // The published error is now the exchange's, so there is no failed provisioning
-            // left for `retryPostAuthentication()` to repeat.
-            if case .failed = provisioning { provisioning = nil }
             state = .error(authError)
             throw authError
         }
-    }
-
-    // MARK: - Retry
-
-    /// Runs the post-authentication work again after it failed, keeping the session.
-    ///
-    /// When provisioning fails ``state`` becomes ``AuthenticationState/error(_:)`` while the
-    /// session stays signed in, and nothing retries it until the authenticator reports the user
-    /// again. Call this — from a "Try again" button, say — to repeat only
-    /// ``PostAuthenticationAction/perform(for:)`` for the user it failed for, without signing
-    /// out or exchanging a credential again. ``state`` passes through
-    /// ``AuthenticationState/authenticatedPendingProvisioning`` and ends at
-    /// ``AuthenticationState/authenticated(_:)``, or back at
-    /// ``AuthenticationState/error(_:)`` with the new failure.
-    ///
-    /// Does nothing unless the current error came from post-authentication work: not after a
-    /// failed exchange, when signed out, when already authenticated, or while an attempt is
-    /// running — so calling it twice in a row runs the work once. A sign-out or a different
-    /// user arriving while it runs takes precedence, and the retry's outcome is dropped.
-    public func retryPostAuthentication() async {
-        guard case .error = state, case .failed(let user) = provisioning else { return }
-        await provision(user)
     }
 
     // MARK: - Link
@@ -163,12 +128,53 @@ public final class AuthenticationStore {
         }
     }
 
+    /// Removes a provider from the signed-in account, keeping its user id.
+    ///
+    /// Like ``link(with:)``, a success republishes the user and a failure leaves ``state``
+    /// alone.
+    ///
+    /// - Throws: Whatever ``Authenticator/unlink(_:)`` threw.
+    public func unlink(_ provider: AuthProviderID) async throws {
+        let unlinked = try await authenticator.unlink(provider)
+        if case .authenticated(let current) = state, current.id == unlinked.id {
+            state = .authenticated(unlinked)
+        }
+    }
+
+    // MARK: - Sign in to an existing account
+
+    /// Runs a registered provider's sign-in UI and signs in to the account the credential
+    /// already belongs to — without creating one or linking anything when there is none.
+    ///
+    /// For a "sign in to my existing account" screen. ``state`` follows through the
+    /// authenticator's stream when the account changes.
+    ///
+    /// - Parameter providerID: Which registered provider to use.
+    /// - Returns: `true` when an existing account was found and is now signed in, `false` when
+    ///   the credential belongs to no account; the current session is then untouched.
+    /// - Throws: ``AuthError/unsupportedProvider(_:)``, ``AuthError/cancelled`` and
+    ///   ``AuthError/credentialAcquisitionFailed(_:)`` as for ``signIn(using:)``.
+    ///   ``AuthError/accountExistsWithDifferentProvider(provider:email:)`` and
+    ///   ``AuthError/accountDeleted`` unchanged, ``AuthError/sessionExchangeFailed(_:)`` for
+    ///   anything else.
+    @discardableResult
+    public func signInExisting(using providerID: AuthProviderID) async throws -> Bool {
+        guard let provider = credentialProviders[providerID] else {
+            throw AuthError.unsupportedProvider(providerID)
+        }
+        let credential = try await acquireCredential(from: provider)
+        do {
+            return try await authenticator.signInExisting(with: credential) != nil
+        } catch {
+            throw Self.exchangeFailure(error)
+        }
+    }
+
     /// Signs in to the account that owns a credential which failed to link.
     ///
-    /// Uses the replacement credential the server issued with the rejection. When there is
-    /// none, it runs the provider's sign-in UI again for a fresh one — the credential that
-    /// collided is never exchanged a second time, because an Apple identity token's nonce is
-    /// spent by the attempted link.
+    /// Hands the collided credential to the authenticator first, which signs in with it when
+    /// its server accepts the same token twice — the session server does. When the
+    /// authenticator cannot reuse it, this runs the provider's sign-in UI again for a fresh one.
     ///
     /// The user id changes to the owning account's; what the previous account held stays with
     /// it. ``state`` follows through the authenticator's stream, as for ``signIn(with:)``. A
@@ -186,7 +192,7 @@ public final class AuthenticationStore {
             _ = try await authenticator.signIn(resolving: collision)
             return
         } catch AuthError.credentialAlreadyInUse {
-            // No replacement this authenticator can use: fall through to a fresh credential.
+            // The collided credential cannot be used again: fall through to a fresh one.
         } catch {
             throw Self.exchangeFailure(error)
         }
@@ -204,7 +210,10 @@ public final class AuthenticationStore {
 
     /// Wraps a failed exchange, except a refusal the person can act on, which keeps its name.
     private static func exchangeFailure(_ error: any Error) -> AuthError {
-        if let authError = error as? AuthError, authError.code == .accountExistsWithDifferentProvider { return authError }
+        if let authError = error as? AuthError,
+           authError.code == .accountExistsWithDifferentProvider || authError.code == .accountDeleted {
+            return authError
+        }
         return .sessionExchangeFailed(error)
     }
 
@@ -227,16 +236,35 @@ public final class AuthenticationStore {
 
     /// Deletes the signed-in account. Irreversible.
     ///
+    /// When the account is linked to Apple and an Apple ``CredentialProvider`` is registered,
+    /// this first runs Apple's authorization sheet for a fresh authorization code and passes it
+    /// on, so the server can revoke the person's Apple tokens as App Review requires (guideline
+    /// 5.1.1(v)). Apple accepts each code once and for about five minutes, which is why it is
+    /// obtained here and not kept from sign-in.
+    ///
     /// The authenticator ends the session once the account is gone, and ``state`` follows
     /// through its stream.
     ///
-    /// - Throws: ``AuthError/deleteAccountFailed(_:)``. Everything the authenticator raised
-    ///   arrives wrapped in that case, including ``AuthError/notAuthenticated`` when there was
-    ///   no session, and a provider's refusal when the last sign-in is too old to authorise
-    ///   deletion.
+    /// - Throws: ``AuthError/cancelled`` unchanged when the person backs out of the Apple
+    ///   sheet — nothing was deleted. ``AuthError/deleteAccountFailed(_:)`` for everything
+    ///   else, including ``AuthError/notAuthenticated`` when there was no session.
     public func deleteAccount() async throws {
+        let appleAuthorizationCode = try await appleAuthorizationCodeForDeletion()
         do {
-            try await authenticator.deleteAccount()
+            try await authenticator.deleteAccount(appleAuthorizationCode: appleAuthorizationCode)
+        } catch {
+            throw AuthError.deleteAccountFailed(error)
+        }
+    }
+
+    private func appleAuthorizationCodeForDeletion() async throws -> String? {
+        guard let user = await authenticator.currentUser(),
+              user.providerIDs.contains(.apple),
+              let apple = credentialProviders[.apple] else { return nil }
+        do {
+            return try await apple.acquireCredential().authorizationCode
+        } catch let error as AuthError where error.code == .cancelled {
+            throw error
         } catch {
             throw AuthError.deleteAccountFailed(error)
         }
@@ -256,67 +284,16 @@ public final class AuthenticationStore {
 
     private func startObservingAuthState() {
         let stream = authenticator.authStateChanges()
-        // A single main-actor task drains the stream serially: awaiting each handler means one
-        // emission finishes before the next begins, so nothing interleaves.
+        // A single main-actor task drains the stream, so emissions apply in order.
         observationTask = Task { @MainActor [weak self] in
             for await user in stream {
                 guard let self else { break }
-                await self.handleAuthStateChange(user)
+                self.handleAuthStateChange(user)
             }
         }
     }
 
-    private func handleAuthStateChange(_ user: AuthUser?) async {
-        guard let user else {
-            provisioning = nil
-            state = .unauthenticated
-            return
-        }
-
-        switch provisioning {
-        case .completed(let userID) where userID == user.id:
-            // Already provisioned: go straight through, so the UI never flashes a loading state.
-            state = .authenticated(user)
-        case .inFlight(let userID) where userID == user.id:
-            // A retry is running for this user; it publishes the outcome.
-            break
-        default:
-            await provision(user)
-        }
-    }
-
-    private func provision(_ user: AuthUser) async {
-        // Claim the user synchronously, before any await, so back-to-back emissions or retries
-        // for the same user cannot both start provisioning.
-        provisioning = .inFlight(userID: user.id)
-        state = .authenticatedPendingProvisioning
-        do {
-            try await postAuthentication.perform(for: user)
-            // Commit only if the claim still stands; a sign-out or another user drops it.
-            guard isInFlight(for: user) else { return }
-            provisioning = .completed(userID: user.id)
-            state = .authenticated(user)
-        } catch {
-            guard isInFlight(for: user) else { return }
-            // Keep the user, so a later emission or `retryPostAuthentication()` can provision.
-            provisioning = .failed(user)
-            // An action that already named its failure keeps that name. Wrapping an
-            // `AuthError.notPermitted` in `postAuthenticationFailed` would put the caller back
-            // where it started: one case for a refusal to re-authenticate against and a refusal
-            // to stop asking about, told apart only by unwrapping.
-            state = .error(error as? AuthError ?? AuthError.postAuthenticationFailed(error))
-        }
-    }
-
-    private func isInFlight(for user: AuthUser) -> Bool {
-        if case .inFlight(let userID) = provisioning { return userID == user.id }
-        return false
-    }
-
-    private enum Provisioning {
-        case inFlight(userID: String)
-        case completed(userID: String)
-        /// Holds the whole user, because a retry has to hand it to the action again.
-        case failed(AuthUser)
+    private func handleAuthStateChange(_ user: AuthUser?) {
+        state = user.map(AuthenticationState.authenticated) ?? .unauthenticated
     }
 }

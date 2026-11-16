@@ -10,7 +10,7 @@ the request carries the SHA-256 hash, the credential carries the raw value, and 
 matches the two to rule out a replayed identity token.
 
 Create a provider and hand it to the store's `credentialProviders`; the credential it produces
-goes on to whatever implements the `Authenticator` protocol, normally `FirebaseAuthenticator`.
+goes on to whatever implements the `Authenticator` protocol, normally `SessionAuthenticator`.
 
 ```swift
 import AuthenticationApple
@@ -41,15 +41,12 @@ let credential = AuthCredential.apple(
 An app that offers Sign in with Apple must revoke the user's Apple tokens when the account is
 deleted (App Review guideline 5.1.1(v)). That takes the authorization code Apple returns with
 each authorization, which the credential carries as `authorizationCode`. The code is single use
-and expires after about five minutes, so authorize again right before deleting instead of
-keeping the one from sign-in:
+and expires after about five minutes, so it has to come from a fresh authorization right before
+deleting. `AuthenticationStore.deleteAccount()` does that when the account is linked to Apple
+and an `AppleCredentialProvider` is registered, and passes the code on to the server:
 
 ```swift
-let fresh = try await AppleCredentialProvider().acquireCredential()
-if let code = fresh.authorizationCode {
-    try await authenticator.revokeAppleToken(authorizationCode: code)   // FirebaseAuthenticator
-}
-try await authenticator.deleteAccount()
+try await store.deleteAccount()   // Shows Apple's sheet first for an Apple-linked account.
 ```
 
 ## Topics

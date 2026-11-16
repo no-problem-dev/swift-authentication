@@ -2,8 +2,8 @@ import Foundation
 import Authentication
 
 public extension AuthenticationStore {
-    /// A store parked in the signed-out state, for previews. Builds without Firebase or any
-    /// other SDK.
+    /// A store parked in the signed-out state, for previews. Builds without a server or any
+    /// SDK.
     static var previewUnauthenticated: AuthenticationStore {
         AuthenticationStore(authenticator: PreviewStubAuthenticator(initial: nil))
     }
@@ -39,12 +39,20 @@ final class PreviewStubAuthenticator: Authenticator, @unchecked Sendable {
         initial ?? AuthUser(id: "preview-user")
     }
 
+    func unlink(_ provider: AuthProviderID) async throws -> AuthUser {
+        initial ?? AuthUser(id: "preview-user")
+    }
+
+    func signInExisting(with credential: AuthCredential) async throws -> AuthUser? {
+        initial
+    }
+
     func signIn(resolving collision: CredentialCollision) async throws -> AuthUser {
         initial ?? AuthUser(id: "preview-user")
     }
 
     func signOut() async throws {}
-    func deleteAccount() async throws {}
+    func deleteAccount(appleAuthorizationCode: String?) async throws {}
 
     func authStateChanges() -> AsyncStream<AuthUser?> {
         let initial = self.initial

@@ -4,11 +4,12 @@ import Foundation
 ///
 /// There is deliberately no per-provider method. Everything goes through one
 /// ``signIn(with:)`` that takes an ``AuthCredential``, which is what keeps the core free of
-/// provider SDKs. `AuthenticationFirebase` supplies the conformance that ships here.
+/// provider SDKs. `AuthenticationSession` supplies the conformance that ships here,
+/// `SessionAuthenticator`, which talks to a session server on the app's own domain.
 public protocol Authenticator: Sendable {
     /// Returns the user of the stored session, or `nil` when there is none.
     ///
-    /// Reads persisted state only: it presents no UI and starts no session.
+    /// Reads persisted state only: it presents no UI, starts no session and makes no request.
     func currentUser() async -> AuthUser?
 
     /// Trades a credential for a session and returns the user it belongs to.
@@ -33,6 +34,27 @@ public protocol Authenticator: Sendable {
     ///   current session is left as it was.
     func link(with credential: AuthCredential) async throws -> AuthUser
 
+    /// Removes a provider from the signed-in account, keeping its user id.
+    ///
+    /// Like ``link(with:)`` it starts no new session, so ``authStateChanges()`` need not emit.
+    ///
+    /// - Parameter provider: The provider to remove.
+    /// - Returns: The same user, without the provider. With none left it is anonymous again.
+    /// - Throws: ``AuthError/notAuthenticated`` when nobody is signed in, and the server's
+    ///   error otherwise — including when the provider was not linked.
+    func unlink(_ provider: AuthProviderID) async throws -> AuthUser
+
+    /// Signs in to the account a credential already belongs to, and does nothing when there is
+    /// none: no account is created and nothing is linked.
+    ///
+    /// For a "sign in to my existing account" screen. ``signIn(with:)`` would create an account
+    /// for a credential nobody has used yet, and ``link(with:)`` would attach it to the current
+    /// one.
+    ///
+    /// - Returns: The user of the owning account, which replaces the current session, or `nil`
+    ///   when the credential belongs to no account — the current session is then untouched.
+    func signInExisting(with credential: AuthCredential) async throws -> AuthUser?
+
     /// Signs in to the account that owns a credential which failed to link.
     ///
     /// Switches the session to that account, so the user id changes.
@@ -40,31 +62,33 @@ public protocol Authenticator: Sendable {
     /// - Parameter collision: The payload of ``AuthError/credentialAlreadyInUse(_:)`` that this
     ///   authenticator raised.
     /// - Returns: The user of the owning account.
-    /// - Throws: ``AuthError/credentialAlreadyInUse(_:)`` again, unchanged, when the collision
-    ///   carries no ``CredentialCollision/renewedCredential`` this authenticator can use — the
-    ///   caller then needs a fresh credential from the provider, which is what
-    ///   ``AuthenticationStore/signIn(resolving:)`` does. Otherwise the server's error.
+    /// - Throws: ``AuthError/credentialAlreadyInUse(_:)`` again, unchanged, when the collided
+    ///   ``CredentialCollision/credential`` cannot be used a second time — it expired, or the
+    ///   server spends it on first use. The caller then needs a fresh credential from the
+    ///   provider, which is what ``AuthenticationStore/signIn(resolving:)`` does. Otherwise the
+    ///   server's error.
     func signIn(resolving collision: CredentialCollision) async throws -> AuthUser
 
     /// Ends the session and clears the credentials stored for it.
-    ///
-    /// Tokens already handed out stay valid until they expire; a backend that needs immediate
-    /// lockout has to revoke them itself.
     func signOut() async throws
 
     /// Deletes the account itself, not just the local session. Irreversible.
     ///
     /// Conformances end the local session once the account is gone, so ``authStateChanges()``
-    /// emits `nil`. Deleting from the device is commonly refused when the last sign-in is too
-    /// old, which arrives here as a thrown error; an app that keeps data on its own server
-    /// deletes through that server instead (see ``AccountDeletion``).
-    func deleteAccount() async throws
+    /// emits `nil`. The session is cleared only after the deletion succeeded, so a failed
+    /// request can be retried with the same session.
+    ///
+    /// - Parameter appleAuthorizationCode: A fresh authorization code from Sign in with Apple,
+    ///   for the server to revoke the person's Apple tokens with, as App Review requires when
+    ///   an account that used Sign in with Apple is deleted (guideline 5.1.1(v)). `nil` when
+    ///   the account is not linked to Apple, or the code could not be obtained.
+    func deleteAccount(appleAuthorizationCode: String?) async throws
 
     /// A stream of the signed-in user, emitting `nil` on sign-out.
     ///
-    /// Conformances must emit the current value as soon as the stream is iterated, the way
-    /// Firebase's state-change listener does. ``AuthenticationStore`` leaves its initial
-    /// checking state on that first emission, so a stream that stays silent until something
-    /// changes will hold the app on its launch screen forever.
+    /// Conformances must emit the current value as soon as the stream is iterated.
+    /// ``AuthenticationStore`` leaves its initial checking state on that first emission, so a
+    /// stream that stays silent until something changes will hold the app on its launch
+    /// screen forever.
     func authStateChanges() -> AsyncStream<AuthUser?>
 }

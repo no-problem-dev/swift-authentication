@@ -12,11 +12,11 @@ public struct AuthUser: Identifiable, Sendable, Equatable {
     /// one, so it is an account identifier and never a device identifier.
     public let id: String
 
-    /// The email address, or `nil` for anonymous sessions and providers that returned none.
+    /// The email address, or `nil` when the authenticator does not report one — the session
+    /// server never does.
     public let email: String?
-    /// The display name, or `nil` when the provider did not supply one.
-    ///
-    /// Often `nil` for Apple, which hands the name over only on the first authorization.
+    /// The display name, or `nil` when the authenticator does not report one — the session
+    /// server never does.
     public let displayName: String?
     /// Whether the session has no provider linked to it.
     ///

@@ -7,9 +7,9 @@ Google Sign-In, as a `CredentialProvider`, plus the redirect handling it needs.
 `AuthenticationGoogle` drives the GoogleSignIn SDK, collects the identity and access tokens,
 and returns them as a vendor-agnostic `AuthCredential`.
 
-The client ID is injected rather than read from Firebase, which is what keeps this module clear
-of FirebaseCore. Apps that already use Firebase can take it from
-`FirebaseConfigurator.googleClientID`; otherwise it comes from the app's `Info.plist`.
+The client ID is injected, typically from the app's `Info.plist`. The ID token in the
+credential is what `SessionAuthenticator` sends to the session server, which verifies it with
+Google's public keys.
 
 ```swift
 import AuthenticationGoogle

@@ -10,16 +10,16 @@ import AppKit
 
 /// Runs Google Sign-In and returns the credential it produced.
 ///
-/// The client ID is injected rather than read from Firebase, which is what keeps this target
-/// clear of FirebaseCore. Apps that use Firebase can pass `FirebaseConfigurator.googleClientID`.
+/// The client ID is injected, typically read from the app's `Info.plist`. This is the only
+/// target in the package that depends on an SDK, GoogleSignIn.
 public final class GoogleCredentialProvider: CredentialProvider, @unchecked Sendable {
     public let providerID = AuthProviderID.google
     private let clientID: String
 
     /// Creates a provider.
     ///
-    /// - Parameter clientID: The Google OAuth client ID, taken from
-    ///   `FirebaseConfigurator.googleClientID` or read from the app's `Info.plist`.
+    /// - Parameter clientID: The Google OAuth client ID, typically read from the app's
+    ///   `Info.plist`.
     public init(clientID: String) {
         self.clientID = clientID
     }

@@ -2,7 +2,7 @@ English | [日本語](./README.ja.md)
 
 # swift-authentication
 
-A modular authentication package that wires Firebase / Apple / Google / REST concretions into a vendor-agnostic core — one target at a time.
+Sign-in for iOS apps whose own server issues the session. Apple and Google prove who the person is; the app's server issues the user id and the tokens.
 
 ![Swift](https://img.shields.io/badge/Swift-6.2-orange.svg)
 ![Platforms](https://img.shields.io/badge/Platforms-iOS%2017+%20%7C%20macOS%2014+-blue.svg)
@@ -11,30 +11,29 @@ A modular authentication package that wires Firebase / Apple / Google / REST con
 
 ## Design
 
-Authentication is split into three responsibilities, each defined as a vendor-agnostic protocol. Concrete implementations live in separate targets and are composed at the app's composition root.
+- **The session comes from the app's server.** The app's Worker (`@studio/app-auth`) issues the user id, a 24-hour access token and a refresh token per device. Every request goes to a domain the app owns, so sign-in does not depend on reaching a third-party authentication service — Google's endpoints, for one, are unreachable from mainland China.
+- **Apple and Google are ways to prove who the person is.** The device sends their identity token; the server verifies it with the provider's public keys and links it to the account, or signs in to the account it already belongs to.
+- **Firebase is not part of this package.** Apps moving off Firebase Authentication use [swift-authentication-firebase](https://github.com/no-problem-dev/swift-authentication-firebase) for the move only: it hands the session an earlier version left on the device to the server, which keeps the person's user id.
 
 | Responsibility | Protocol (core) | Concrete (separate target) |
 |---|---|---|
 | Credential acquisition | `CredentialProvider` | `AppleCredentialProvider` / `GoogleCredentialProvider` |
-| Session exchange | `Authenticator` | `FirebaseAuthenticator` |
-| Post-auth action (idempotent) | `PostAuthenticationAction` | `APIUserProvisioning` (REST) |
+| Session exchange | `Authenticator` | `SessionAuthenticator` |
+| Bearer tokens | `AuthTokenProviding` | `SessionTokenProvider` |
 
-**`AuthenticationStore`** (`@Observable`, `@MainActor`) wires these together and exposes a `state` property that views observe.
+**`AuthenticationStore`** (`@Observable`, `@MainActor`) wires these together and exposes a `state` property that views observe. What the app does once someone is signed in is the app's business.
 
 ### Target Layout
 
 | Target | Role | External dependencies |
 |---|---|---|
 | **`Authentication`** | Core abstractions (protocols, value types, `AuthenticationStore`) | **None** |
+| **`AuthenticationSession`** | Sessions from the app's server: sign-in, linking, refresh, keychain storage, the legacy exchange | Foundation / Security (system) |
 | **`AuthenticationUI`** | SwiftUI views + Environment DI | SwiftUI (system) |
 | **`AuthenticationApple`** | Apple credential acquisition | AuthenticationServices / CryptoKit (system) |
 | **`AuthenticationGoogle`** | Google credential acquisition | GoogleSignIn |
-| **`AuthenticationFirebase`** | Firebase session exchange and configuration | FirebaseAuth |
-| **`AuthenticationAPI`** | REST post-authentication action | swift-api-client |
 
-**The core (`Authentication`) and UI (`AuthenticationUI`) targets have zero vendor SDK dependencies.**
-Views can depend on only these two, keeping SwiftUI Previews free of Firebase / GoogleSignIn.
-Concrete implementations (Firebase, etc.) are imported only at the composition root.
+Only `AuthenticationGoogle` depends on an SDK. Views depend on `Authentication` and `AuthenticationUI` alone, so SwiftUI previews load nothing else.
 
 ## Usage
 
@@ -44,33 +43,22 @@ Concrete implementations (Firebase, etc.) are imported only at the composition r
 import SwiftUI
 import Authentication
 import AuthenticationUI
-import AuthenticationFirebase
+import AuthenticationSession
 import AuthenticationApple
-import AuthenticationGoogle
-import AuthenticationAPI
-import APIClient
 
 @main
 struct MyApp: App {
     @State private var store: AuthenticationStore
+    private let authenticator: SessionAuthenticator
 
     init() {
-        FirebaseConfigurator.configure()   // Production. Use .configure(environment: .emulator()) for local dev.
-
-        let apiClient = APIClientImpl(
-            baseURL: URL(string: "https://api.example.com")!,
-            authTokenProvider: APITokenProviderAdapter(FirebaseTokenProvider())
+        authenticator = SessionAuthenticator(
+            baseURL: URL(string: "https://api.example.com")!,   // A domain you own, not workers.dev.
+            installID: { InstallID.current }                    // A UUID the app keeps in UserDefaults.
         )
-
         _store = State(initialValue: AuthenticationStore(
-            authenticator: FirebaseAuthenticator(
-                accountDeletion: APIAccountDeletion(apiClient: apiClient, path: "/v1/me")
-            ),
-            postAuthentication: APIUserProvisioning(apiClient: apiClient),
-            credentialProviders: [
-                AppleCredentialProvider(),
-                GoogleCredentialProvider(clientID: FirebaseConfigurator.googleClientID ?? "")
-            ]
+            authenticator: authenticator,
+            credentialProviders: [AppleCredentialProvider()]
         ))
     }
 
@@ -78,13 +66,7 @@ struct MyApp: App {
         WindowGroup {
             AuthenticatedRootView(
                 loading: { ProgressView() },
-                unauthenticated: {
-                    VStack(spacing: 16) {
-                        GoogleSignInButton()
-                        AppleSignInButton()
-                    }
-                    .padding(.horizontal, 32)
-                },
+                unauthenticated: { ProgressView().task { try? await authenticator.establishSession() } },
                 error: { error in Text(error.localizedDescription) },
                 authenticated: { user in MainView(userID: user.id) }
             )
@@ -92,6 +74,14 @@ struct MyApp: App {
         }
     }
 }
+```
+
+Your API client takes its bearer token from `authenticator.tokenProvider`:
+
+```swift
+let token = try await authenticator.tokenProvider.requiredToken()
+// After a 401, once:
+let renewed = try await authenticator.tokenProvider.requiredToken(forceRefresh: true)
 ```
 
 ### 2. Screen views (previewable, vendor-free)
@@ -114,7 +104,6 @@ struct MainView: View {
 }
 
 #Preview {
-    // No Firebase needed — uses a stub.
     MainView(userID: "preview")
         .authenticationStore(.previewUnauthenticated)
 }
@@ -124,29 +113,24 @@ struct MainView: View {
 
 `AuthenticationState` transitions:
 
-- `.checking` — verifying stored session on launch
-- `.unauthenticated` — no active session
-- `.authenticatedPendingProvisioning` — session exchanged, post-auth action pending
-- `.authenticated(AuthUser)` — fully authenticated
-- `.error(any Error)` — an error occurred
+- `.checking` — reading the stored session on launch
+- `.unauthenticated` — no session
+- `.authenticated(AuthUser)` — signed in
+- `.error(any Error)` — an exchange failed
 
-Only `.authenticated` means the account is ready: while provisioning is pending the session exists but the app should still show a loading state.
+### Starting a session at launch
 
-### Post-authentication provisioning (optional)
+`establishSession()` decides what the device signs in as:
 
-`APIUserProvisioning` calls `POST <path>` (default `/auth/initialize`) once the session exists, with the Firebase ID token attached as `Authorization: Bearer`. The store calls it **once per authentication session**, but retries and reinstalls mean the endpoint has to be idempotent on the server too. Omit `postAuthentication` when there is nothing to provision.
+1. A stored session is used as it is, refreshed first when its access token has less than five minutes left. When the refresh cannot reach the server, the stored session is still used.
+2. With none stored, a `LegacySessionSource` that still holds a session from an earlier version of the app has it exchanged at `/v1/auth/firebase`. The person keeps their user id. **When the exchange fails, no anonymous session is opened** — that would strand their records — and the call throws; call it again when the network is back.
+3. Otherwise a new anonymous session is opened at `/v1/auth/anonymous`.
 
-### Retrying provisioning after a failure
+`store.signIn(with: .anonymous)` goes through the same steps. Concurrent calls share one attempt.
 
-When the post-authentication action fails, `state` becomes `.error` but the session stays signed in. Offer a "Try again" that repeats only the action, instead of a sign-out:
+### Tokens
 
-```swift
-Button("Try again") {
-    Task { await store.retryPostAuthentication() }
-}
-```
-
-`state` goes through `.authenticatedPendingProvisioning` to `.authenticated`, or back to `.error` with the new failure. The call does nothing unless the current error came from post-authentication work (not after a failed exchange, when signed out, or while an attempt is running), so a double tap runs the action once. The server still has to accept the request more than once.
+`SessionTokenProvider` refreshes at `/v1/auth/refresh` before a token has less than five minutes left, joins refreshes that arrive at the same time into one, and always refreshes for `forceRefresh: true`. When the server rejects the refresh token, the session is removed from the device, `authStateChanges()` emits `nil`, and the call throws `AuthError.notAuthenticated`. A refresh that was only due early and cannot reach the server falls back to the token that still works. Requests time out after 20 seconds by default (`requestTimeout:`).
 
 ### Upgrading an anonymous account
 
@@ -162,47 +146,64 @@ do {
 }
 ```
 
-Never exchange the credential that collided a second time: the nonce inside an Apple identity token is spent by the link, and Firebase answers "Duplicate credential received". `signIn(resolving:)` uses the replacement credential Firebase returned with the error and, when there is none, runs the provider's sheet again for a fresh one. Code that talks to Firebase directly can convert this package's credentials with `FirebaseCredentialMapper.makeCredential(from:)` rather than keeping its own copy.
+The collision carries the credential that collided. The server verifies the token by its signature, so `signIn(resolving:)` signs in to the owning account with the same token without showing Apple's sheet again. When the token has expired in the meantime, the store runs the provider's sheet for a fresh one. Switching to another user revokes the previous session's device on the server.
 
-### Keeping an anonymous user across reinstalls
+`unlink(_:)` removes a provider again (`DELETE /v1/auth/identities/:provider`) and keeps the user id.
 
-`FirebaseConfigurator.configure()` signs out on the first launch after an install. Firebase keeps the session in the keychain, which survives deleting the app, so without that a reinstall would silently restore the previous owner's session. Apps with Apple or Google sign-in keep this default.
+### Signing in to an existing account
 
-An app that signs in only anonymously needs the opposite. An anonymous user has nothing to sign in with again, so signing out makes the uid — and everything your server keeps under it — unreachable for good. Pass `.keep` and a reinstall comes back as the same anonymous user, able to read those records again:
-
-```swift
-FirebaseConfigurator.configure(sessionAfterReinstall: .keep)
-```
-
-Whoever holds the device inherits the anonymous account, which is acceptable only because it carries no identity. Restoring a backup onto a different device or erasing the device does not keep the keychain, and starts a new anonymous user.
-
-### Deleting the account through your server
-
-Deleting the Firebase account from the device is refused when the last sign-in is too old (`requiresRecentLogin`), and when the app first deletes its server data that refusal arrives after the data is gone. Give `FirebaseAuthenticator` an `AccountDeletion` — `APIAccountDeletion` sends `DELETE <path>` through swift-api-client — and `deleteAccount()` calls the server, then clears the local session only once the server succeeded. Without one, the account is deleted from the device as before. Either way, `deleteAccount()` now ends the local session itself.
-
-### Forcing a token refresh
-
-`AuthTokenProviding.token(forceRefresh:)` fetches a new token even when the cached one has not expired — what to do after a 401. A transport that takes a token closure gets one from `tokenSource`:
+For a "sign in to my existing account" screen, `signInExisting` sends `mode: "sign_in_existing"`: it signs in to the account the credential belongs to, and when there is none it creates nothing, links nothing and leaves the session alone.
 
 ```swift
-let token: @Sendable (_ forceRefresh: Bool) async throws -> String = FirebaseTokenProvider().tokenSource
+let found = try await store.signInExisting(using: .apple)
+if !found { /* No account uses this Apple ID yet. */ }
 ```
 
-### Deleting an account that used Sign in with Apple
+### Deleted accounts
 
-App Review guideline 5.1.1(v) requires revoking the user's Apple tokens on account deletion. The credential from `AppleCredentialProvider` carries Apple's `authorizationCode`; it is single use and expires in about five minutes, so authorize again right before deleting, revoke, then delete:
+The server answers 410 `account_deleted` for a deleted account; it arrives as `AuthError.accountDeleted`. A legacy session that belonged to a deleted account is forgotten and a new anonymous session opened in its place.
+
+### Signing out
+
+`signOut()` clears the keychain first and then asks the server to revoke the device at `/v1/auth/sign-out`, best effort — it works offline. A legacy session is forgotten too, so starting again opens a new anonymous user instead of exchanging the old one back.
+
+### Deleting the account
+
+`store.deleteAccount()` sends `DELETE /v1/account` (change it with `accountDeletionPath:`) with the bearer token, then clears the session once the server succeeded. For an account linked to Apple, it first runs Apple's sheet for a fresh authorization code and sends it as `{ "appleAuthorizationCode": … }`, so the server can revoke the person's Apple tokens as App Review guideline 5.1.1(v) requires. The code is single use and lasts about five minutes, which is why it is obtained at deletion time. Backing out of the sheet deletes nothing and throws `AuthError.cancelled`.
+
+### Sharing the session with an extension
+
+`KeychainSessionStore` keeps the session with `kSecAttrAccessibleAfterFirstUnlock`. Pass an access group to share it with a widget:
 
 ```swift
-let fresh = try await AppleCredentialProvider().acquireCredential()
-if let code = fresh.authorizationCode {
-    try await firebaseAuthenticator.revokeAppleToken(authorizationCode: code)
-}
-try await firebaseAuthenticator.deleteAccount()
+SessionAuthenticator(
+    baseURL: apiURL,
+    installID: { InstallID.current },
+    store: KeychainSessionStore(accessGroup: "TEAMID.com.example.shared")
+)
 ```
+
+Keychain items survive deleting the app, so a reinstall on the same device comes back as the same user. Tests and previews use `InMemorySessionStore`.
+
+### Moving off Firebase Authentication
+
+Add [swift-authentication-firebase](https://github.com/no-problem-dev/swift-authentication-firebase) and pass its `FirebaseLegacySessionSource`:
+
+```swift
+import AuthenticationFirebase
+
+SessionAuthenticator(
+    baseURL: apiURL,
+    installID: { InstallID.current },
+    legacySource: FirebaseLegacySessionSource()
+)
+```
+
+The Firebase ID token is exchanged once, the server keeps the Firebase uid as the user id, and the Firebase session is signed out afterwards. Apps that never used Firebase leave the package out.
 
 ### Custom providers
 
-`AuthProviderID` is open-ended. Implement `CredentialProvider` / `Authenticator` / `PostAuthenticationAction` to plug in any backend — direct Firestore access, custom OIDC, anything else.
+`AuthProviderID` is open-ended. Implement `CredentialProvider` or `Authenticator` to plug in anything else.
 
 ## Documentation
 
@@ -212,14 +213,16 @@ API reference for every module: the DocC catalog in each module under [`Sources/
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "10.0.0")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "11.0.0")
 ]
 ```
 
 Add only the products your target needs:
 
 - Screen modules → `AuthenticationUI` (+ `Authentication`)
-- Composition root (App target) → `AuthenticationFirebase` / `AuthenticationApple` / `AuthenticationGoogle` / `AuthenticationAPI`
+- Composition root (App target) → `AuthenticationSession` / `AuthenticationApple` / `AuthenticationGoogle`
+
+Moving from 10.x: see [CHANGELOG.md](CHANGELOG.md).
 
 ## Requirements
 

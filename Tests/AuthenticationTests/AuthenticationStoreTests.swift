@@ -20,25 +20,18 @@ struct AuthenticationStoreTests {
 
     // MARK: - Happy path
 
-    @Test("signIn(using:) acquires a credential, exchanges it, then provisions once")
+    @Test("signIn(using:) acquires a credential, exchanges it, and publishes the user")
     func signInUsingProviderFullFlow() async throws {
-        let user = AuthUser(id: "abc", email: "a@example.com")
+        let user = AuthUser(id: "abc", providerIDs: [.apple])
         let authenticator = MockAuthenticator(stubbedUser: user)
         let provider = MockCredentialProvider(providerID: .apple)
-        let postAuth = MockPostAuthenticationAction()
-        let store = AuthenticationStore(
-            authenticator: authenticator,
-            postAuthentication: postAuth,
-            credentialProviders: [provider]
-        )
+        let store = AuthenticationStore(authenticator: authenticator, credentialProviders: [provider])
 
         try await store.signIn(using: .apple)
         await waitUntil { store.state.isAuthenticated }
 
         #expect(provider.acquireCallCount == 1)
         #expect(authenticator.signInCallCount == 1)
-        #expect(postAuth.performCallCount == 1)
-        #expect(postAuth.performedUserIDs == ["abc"])
         #expect(store.state == .authenticated(user))
     }
 
@@ -54,49 +47,6 @@ struct AuthenticationStoreTests {
         #expect(authenticator.signedInCredentials == [credential])
     }
 
-    // MARK: - Idempotency
-
-    @Test("provisioning runs only once even when auth state fires repeatedly")
-    func provisioningIsIdempotentAcrossRepeatedEmissions() async throws {
-        let user = AuthUser(id: "dup")
-        let authenticator = MockAuthenticator(stubbedUser: user)
-        let postAuth = MockPostAuthenticationAction()
-        let store = AuthenticationStore(authenticator: authenticator, postAuthentication: postAuth)
-
-        // Reproduce a listener firing repeatedly for the same user.
-        authenticator.emit(user)
-        authenticator.emit(user)
-        authenticator.emit(user)
-        await waitUntil { store.state.isAuthenticated }
-        // Firing again must not provision again.
-        authenticator.emit(user)
-        await waitUntil { postAuth.performCallCount > 1 }
-
-        #expect(postAuth.performCallCount == 1)
-        #expect(store.state == .authenticated(user))
-    }
-
-    @Test("signing out resets idempotency so the next sign-in provisions again")
-    func provisioningResetsAfterSignOut() async throws {
-        let user = AuthUser(id: "u")
-        let authenticator = MockAuthenticator(stubbedUser: user)
-        let postAuth = MockPostAuthenticationAction()
-        let store = AuthenticationStore(authenticator: authenticator, postAuthentication: postAuth)
-
-        authenticator.emit(user)
-        await waitUntil { store.state.isAuthenticated }
-        #expect(postAuth.performCallCount == 1)
-
-        try await store.signOut()
-        await waitUntil { store.state == .unauthenticated }
-        #expect(store.state == .unauthenticated)
-
-        authenticator.emit(user)
-        await waitUntil { postAuth.performCallCount == 2 }
-        #expect(postAuth.performCallCount == 2)
-        #expect(store.state == .authenticated(user))   // Keeps the store alive to the end.
-    }
-
     // MARK: - State transitions
 
     @Test("starts in .checking and becomes .unauthenticated on a nil emission")
@@ -108,6 +58,23 @@ struct AuthenticationStoreTests {
         authenticator.emit(nil)
         await waitUntil { store.state == .unauthenticated }
         #expect(store.state == .unauthenticated)
+    }
+
+    @Test("each emission replaces the state: signed in, signed out, signed in as someone else")
+    func emissionsFollowTheAuthenticator() async throws {
+        let authenticator = MockAuthenticator()
+        let store = AuthenticationStore(authenticator: authenticator)
+        let first = AuthUser(id: "first", isAnonymous: true)
+        let second = AuthUser(id: "second", providerIDs: [.google])
+
+        authenticator.emit(first)
+        await waitUntil { store.state == .authenticated(first) }
+        authenticator.emit(nil)
+        await waitUntil { store.state == .unauthenticated }
+        authenticator.emit(second)
+        await waitUntil { store.state == .authenticated(second) }
+
+        #expect(store.state == .authenticated(second))
     }
 
     // MARK: - Errors
@@ -188,50 +155,6 @@ struct AuthenticationStoreTests {
         #expect({ if case .error = store.state { return true } else { return false } }())
     }
 
-    @Test("post-auth failure surfaces as .error state via the observer")
-    func postAuthFailure() async throws {
-        let user = AuthUser(id: "p")
-        let authenticator = MockAuthenticator(stubbedUser: user)
-        let postAuth = MockPostAuthenticationAction(error: TestError("provision"))
-        let store = AuthenticationStore(authenticator: authenticator, postAuthentication: postAuth)
-
-        authenticator.emit(user)
-        await waitUntil { if case .error = store.state { return true } else { return false } }
-
-        #expect(publishedCode(of: store) == .postAuthenticationFailed)
-    }
-
-    /// An action that says "sign in again" and one that says "stop asking" have to stay
-    /// distinguishable. Wrapping both in `postAuthenticationFailed` reintroduces the guess.
-    @Test(
-        "an AuthError from the post-auth action is published unchanged",
-        arguments: [AuthError.Code.sessionExpired, .notPermitted]
-    )
-    func postAuthErrorKeepsItsName(code: AuthError.Code) async throws {
-        let raised: AuthError = code == .sessionExpired
-            ? .sessionExpired(TestError("401"))
-            : .notPermitted(TestError("403"))
-        let user = AuthUser(id: "p")
-        let authenticator = MockAuthenticator(stubbedUser: user)
-        let store = AuthenticationStore(
-            authenticator: authenticator,
-            postAuthentication: MockPostAuthenticationAction(error: raised)
-        )
-
-        authenticator.emit(user)
-        await waitUntil { if case .error = store.state { return true } else { return false } }
-
-        #expect(publishedCode(of: store) == code)
-    }
-
-    @MainActor
-    private func publishedCode(of store: AuthenticationStore) -> AuthError.Code? {
-        guard case .error(let error) = store.state, let authError = error as? AuthError else {
-            return nil
-        }
-        return authError.code
-    }
-
     @Test("signOut failure throws .signOutFailed")
     func signOutFailure() async {
         let authenticator = MockAuthenticator()
@@ -263,28 +186,51 @@ struct AuthenticationStoreTests {
         await waitUntil { store.state == .unauthenticated }
 
         #expect(authenticator.deleteCallCount == 1)
+        #expect(authenticator.deletedWithAppleCodes == [nil], "no Apple link, no Apple sheet")
         #expect(store.state == .unauthenticated)
     }
 
-    @Test("deleteAccount resets idempotency so a subsequent sign-in provisions again")
-    func deleteAccountResetsProvisioning() async throws {
-        let user = AuthUser(id: "del-reset")
+    @Test("deleting an Apple-linked account asks Apple for a fresh code and passes it on")
+    func deleteAccountPassesAppleCode() async throws {
+        let user = AuthUser(id: "apple-user", providerIDs: [.apple])
         let authenticator = MockAuthenticator(stubbedUser: user)
-        let postAuth = MockPostAuthenticationAction()
-        let store = AuthenticationStore(authenticator: authenticator, postAuthentication: postAuth)
-
-        authenticator.emit(user)
-        await waitUntil { store.state.isAuthenticated }
-        #expect(postAuth.performCallCount == 1)
+        authenticator.storedUser = user
+        let apple = MockCredentialProvider(
+            providerID: .apple,
+            result: .success(AuthCredential(provider: .apple, idToken: "id", rawNonce: "n", authorizationCode: "fresh-code"))
+        )
+        let store = AuthenticationStore(authenticator: authenticator, credentialProviders: [apple])
 
         try await store.deleteAccount()
-        await waitUntil { store.state == .unauthenticated }
 
-        // Signing back in under the same ID: the claim was released, so provisioning reruns.
-        authenticator.emit(user)
-        await waitUntil { postAuth.performCallCount == 2 }
-        #expect(postAuth.performCallCount == 2)
-        #expect(store.state == .authenticated(user))
+        #expect(apple.acquireCallCount == 1)
+        #expect(authenticator.deletedWithAppleCodes == ["fresh-code"])
+    }
+
+    @Test("backing out of Apple's sheet deletes nothing and throws .cancelled")
+    func deleteAccountAppleCancelled() async {
+        let user = AuthUser(id: "apple-user", providerIDs: [.apple])
+        let authenticator = MockAuthenticator(stubbedUser: user)
+        authenticator.storedUser = user
+        let apple = MockCredentialProvider(providerID: .apple, result: .failure(AuthError.cancelled))
+        let store = AuthenticationStore(authenticator: authenticator, credentialProviders: [apple])
+
+        await #expect {
+            try await store.deleteAccount()
+        } throws: { ($0 as? AuthError)?.code == .cancelled }
+        #expect(authenticator.deleteCallCount == 0)
+    }
+
+    @Test("an Apple-linked account with no Apple provider registered is deleted without a code")
+    func deleteAccountWithoutAppleProvider() async throws {
+        let user = AuthUser(id: "apple-user", providerIDs: [.apple])
+        let authenticator = MockAuthenticator(stubbedUser: user)
+        authenticator.storedUser = user
+        let store = AuthenticationStore(authenticator: authenticator)
+
+        try await store.deleteAccount()
+
+        #expect(authenticator.deletedWithAppleCodes == [nil])
     }
 
     @Test("repeated deleteAccount calls are safe and keep the state unauthenticated")
@@ -344,24 +290,6 @@ struct AuthenticationStoreTests {
     }
 }
 
-@Suite("PostAuthenticationAction helpers")
-struct PostAuthenticationActionTests {
-    @Test("NoPostAuthentication does nothing")
-    func noop() async throws {
-        try await NoPostAuthentication().perform(for: AuthUser(id: "x"))
-    }
-
-    @Test("Composite runs all actions in order")
-    func composite() async throws {
-        let a = MockPostAuthenticationAction()
-        let b = MockPostAuthenticationAction()
-        let composite = CompositePostAuthentication([a, b])
-        try await composite.perform(for: AuthUser(id: "y"))
-        #expect(a.performCallCount == 1)
-        #expect(b.performCallCount == 1)
-    }
-}
-
 @Suite("Value types")
 struct ValueTypeTests {
     @Test("AuthenticationState.isAuthenticated and user accessor")
@@ -373,7 +301,7 @@ struct ValueTypeTests {
         #expect(AuthenticationState.unauthenticated.user == nil)
     }
 
-    @Test("AuthenticationState equality matches v1 semantics")
+    @Test("AuthenticationState equality compares users and ignores error payloads")
     func stateEquality() {
         #expect(AuthenticationState.checking == .checking)
         #expect(AuthenticationState.unauthenticated == .unauthenticated)
@@ -387,7 +315,9 @@ struct ValueTypeTests {
     func providerExtensible() {
         let custom = AuthProviderID(rawValue: "oidc.acme")
         #expect(custom.rawValue == "oidc.acme")
-        #expect(AuthProviderID.apple == AuthProviderID(rawValue: "apple.com"))
+        #expect(AuthProviderID.apple == AuthProviderID(rawValue: "apple"))
+        #expect(AuthProviderID.google == AuthProviderID(rawValue: "google"))
+        #expect(AuthProviderID.anonymous == AuthProviderID(rawValue: "anonymous"))
     }
 
     @Test("AuthError.code maps representative cases")

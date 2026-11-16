@@ -2,9 +2,8 @@ import Foundation
 
 /// Supplies the current authentication token to code that must not know where it came from.
 ///
-/// This is the seam that lets a REST client send `Authorization: Bearer` without importing an
-/// authentication SDK. `AuthenticationFirebase` conforms with `FirebaseTokenProvider`, and
-/// `AuthenticationAPI` bridges that to swift-api-client with `APITokenProviderAdapter`.
+/// This is the seam that lets a REST client send `Authorization: Bearer` without knowing how
+/// the session is kept. `AuthenticationSession` conforms with `SessionTokenProvider`.
 ///
 /// There is one requirement and no default for it. A conformance that could not refresh on
 /// demand would have to answer `forceRefresh: true` with the token it already holds, and the
@@ -49,7 +48,7 @@ extension AuthTokenProviding {
     ///
     /// ```swift
     /// let token: @Sendable (_ forceRefresh: Bool) async throws -> String =
-    ///     FirebaseTokenProvider().tokenSource
+    ///     authenticator.tokenProvider.tokenSource
     /// ```
     ///
     /// Calls ``requiredToken(forceRefresh:)``, so a signed-out call throws
