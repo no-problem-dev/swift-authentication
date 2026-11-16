@@ -24,9 +24,11 @@ public protocol LegacySessionSource: Sendable {
     /// Returns the credential of the session the earlier version left, or `nil` when there is
     /// none on this device.
     ///
-    /// - Throws: Whatever stopped the credential from being read — a keychain that is locked,
-    ///   an item in a shape this version does not know. The authenticator then fails rather
-    ///   than starting over, and tries again the next time it is asked to establish a session.
+    /// - Throws: Whatever stopped the credential from being read — ``ProtectedDataUnavailable``
+    ///   for a keychain that is locked, an item in a shape this version does not know. The
+    ///   authenticator then fails rather than starting over, and tries again the next time it is
+    ///   asked to establish a session. Do not return `nil` while the device's protected data is
+    ///   not available: a locked keychain can answer "not found" for an item that is there.
     func legacyCredential() async throws -> LegacyCredential?
 
     /// Forgets the earlier session: once it has been exchanged, once the server said it can never

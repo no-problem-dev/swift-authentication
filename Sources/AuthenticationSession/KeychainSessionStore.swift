@@ -1,11 +1,16 @@
 import Foundation
 import Security
+import Authentication
 
 /// A ``SessionStore`` in the keychain, readable once the device has been unlocked after boot.
 ///
 /// `kSecAttrAccessibleAfterFirstUnlock`, so background launches — a widget refresh, a
 /// background task — can read the session too. Keychain items survive deleting the app, so a
 /// reinstall on the same device comes back as the same user.
+///
+/// While the device's protected data is not available — before the first unlock, or during a
+/// prewarmed launch while locked — ``load()`` throws ``ProtectedDataUnavailable`` instead of
+/// answering "no session", even when the keychain said the item was not found.
 public struct KeychainSessionStore: SessionStore {
     /// A keychain call that returned something other than success.
     public struct Failure: Error, Equatable, Sendable {
@@ -26,6 +31,7 @@ public struct KeychainSessionStore: SessionStore {
     private let service: String
     private let account: String
     private let accessGroup: String?
+    private let protectedData: any ProtectedDataAvailability
 
     /// Creates a store.
     ///
@@ -34,16 +40,25 @@ public struct KeychainSessionStore: SessionStore {
     ///   - account: The keychain account the item is filed under.
     ///   - accessGroup: A keychain access group to share the session with — an app extension
     ///     such as a widget. `nil` keeps it to the app.
-    public init(service: String = "AuthenticationSession", account: String = "session", accessGroup: String? = nil) {
+    ///   - protectedData: Asked before an item that was not found is reported as no session.
+    ///     ``KeychainProtectedDataProbe`` by default.
+    public init(
+        service: String = "AuthenticationSession",
+        account: String = "session",
+        accessGroup: String? = nil,
+        protectedData: any ProtectedDataAvailability = KeychainProtectedDataProbe()
+    ) {
         self.service = service
         self.account = account
         self.accessGroup = accessGroup
+        self.protectedData = protectedData
     }
 
     /// Returns the stored session, or `nil` when there is none.
     ///
-    /// - Throws: ``Failure`` when the keychain could not be read, and ``UndecodableItem`` when
-    ///   an item is stored but is not a session. Neither means "no session".
+    /// - Throws: ``ProtectedDataUnavailable`` while the device's protected data is not available,
+    ///   ``Failure`` when the keychain could not be read otherwise, and ``UndecodableItem`` when
+    ///   an item is stored but is not a session. None of them means "no session".
     public func load() throws -> AuthSession? {
         var query = baseQuery
         query[kSecReturnData as String] = true
@@ -62,9 +77,11 @@ public struct KeychainSessionStore: SessionStore {
                 throw UndecodableItem(reason: String(describing: error))
             }
         case errSecItemNotFound:
+            // Locked, the keychain can say "not found" for an item that is there.
+            guard protectedData.isAvailable else { throw ProtectedDataUnavailable(status: status) }
             return nil
         default:
-            throw Failure(status: status)
+            throw Self.failure(status)
         }
     }
 
@@ -80,9 +97,9 @@ public struct KeychainSessionStore: SessionStore {
             return
         case errSecItemNotFound:
             let added = SecItemAdd(baseQuery.merging(attributes) { _, new in new } as CFDictionary, nil)
-            guard added == errSecSuccess else { throw Failure(status: added) }
+            guard added == errSecSuccess else { throw Self.failure(added) }
         default:
-            throw Failure(status: updated)
+            throw Self.failure(updated)
         }
     }
 
@@ -91,6 +108,10 @@ public struct KeychainSessionStore: SessionStore {
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw Failure(status: status)
         }
+    }
+
+    private static func failure(_ status: OSStatus) -> any Error {
+        status == errSecInteractionNotAllowed ? ProtectedDataUnavailable(status: status) : Failure(status: status)
     }
 
     private var baseQuery: [String: Any] {

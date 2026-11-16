@@ -196,6 +196,16 @@ SessionAuthenticator(
 
 キーチェーンの項目はアプリを消しても残るので、同じ端末で入れ直すと同じユーザーに戻る。セッションとして読めない項目は勝手に消さず `KeychainSessionStore.UndecodableItem` を投げる（`signOut()` で消える）。テストとプレビューは `InMemorySessionStore` を使う。
 
+端末の保護されたデータが使えない間（再起動後に一度もロックを解いていない間や、ロック中の事前起動・バックグラウンドでの起動）は、キーチェーンが読めず、項目があるのに「見つからない」と答えることもある。`KeychainSessionStore` は「無い」と答える前に `ProtectedDataAvailability`（既定は UIKit を使わない `KeychainProtectedDataProbe`）に確かめ、使えなければ `establishSession()` は新しいアカウントを作らず `ProtectedDataUnavailable` を投げる。`UIApplication.protectedDataDidBecomeAvailableNotification` の後にもう一度呼ぶ。
+
+```swift
+do {
+    try await authenticator.establishSession()
+} catch is ProtectedDataUnavailable {
+    // サインアウトではない。キーチェーンがロック中なので、解けたらやり直す
+}
+```
+
 ### Firebase Authentication から移す
 
 [swift-authentication-firebase](https://github.com/no-problem-dev/swift-authentication-firebase) を足し、`FirebaseKeychainLegacySessionSource` を渡す。Firebase Authentication がキーチェーンに残したリフレッシュトークンを Firebase の SDK なしで読み、サーバーが Google で替える。
@@ -224,7 +234,7 @@ SessionAuthenticator(
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "12.0.0")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "12.1.0")
 ]
 ```
 

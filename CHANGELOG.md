@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [12.1.0] - 2026-11-16
+
+A launch the person did not start — prewarming, a background task — before the first unlock or
+while the device is locked no longer opens a new account over theirs.
+
+### Fixed
+
+- `KeychainSessionStore.load()` no longer answers "no session" while the device's protected data
+  is unavailable. A locked keychain can return `errSecItemNotFound` for an item that is there
+  (firebase-ios-sdk#16498, fixed the same way in #16505); the store now checks before trusting it
+  and throws `ProtectedDataUnavailable` instead. `establishSession()` then opens nothing,
+  exchanges nothing and caches nothing, and the next call after unlock finds the session.
+- `errSecInteractionNotAllowed` from the keychain is thrown as `ProtectedDataUnavailable`, in
+  place of `KeychainSessionStore.Failure(status: -25308)`.
+- A legacy source that throws `ProtectedDataUnavailable` has it thrown from `establishSession()`
+  as it is, not wrapped in `AuthError.sessionExchangeFailed`.
+
+### Added
+
+- `ProtectedDataAvailability`, the check a keychain read makes before it reports that nothing is
+  there, and `KeychainProtectedDataProbe`, the default: it writes a
+  `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` item and removes it, so it needs no UIKit and
+  works in app extensions. `KeychainSessionStore(…, protectedData:)` takes another — one backed
+  by `UIApplication.isProtectedDataAvailable`, say.
+- `ProtectedDataUnavailable`. Call `establishSession()` again after
+  `UIApplication.protectedDataDidBecomeAvailableNotification` or when the scene becomes active.
+
 ## [12.0.0] - 2026-11-16
 
 Moving off Firebase no longer needs the Firebase SDK on the device: the legacy source can hand
