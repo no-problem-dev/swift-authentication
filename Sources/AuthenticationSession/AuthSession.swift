@@ -88,6 +88,24 @@ public struct AuthSession: Sendable, Equatable, Codable {
     }
 }
 
+// Logs, crash reports and `dump` print a value through these. The tokens stay out of all of them.
+extension AuthSession: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    public var description: String {
+        "AuthSession(user: \(user.id), linkedProviders: \(user.linkedProviders.map(\.rawValue)), "
+            + "accessToken: <redacted>, accessTokenExpiresAt: \(accessTokenExpiresAt), refreshToken: <redacted>)"
+    }
+
+    public var debugDescription: String { description }
+
+    public var customMirror: Mirror {
+        Mirror(
+            self,
+            children: ["user": user, "accessTokenExpiresAt": accessTokenExpiresAt, "tokens": "<redacted>"],
+            displayStyle: .struct
+        )
+    }
+}
+
 /// A point in time as the server writes it: milliseconds since 1970, as a JSON number.
 private struct EpochMilliseconds: Codable {
     let date: Date

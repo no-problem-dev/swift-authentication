@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [12.1.2] - 2026-11-16
+
+Fixes from a security review. No public API changes; the session server ignores the new `nonce`
+field until it checks it.
+
+### Fixed
+
+- The Apple nonce never reached the server: the raw value stayed on `AuthCredential` while
+  `/v1/auth/apple` was sent only the identity token, so nothing tied the token to the attempt.
+  `/v1/auth/apple` and `/v1/auth/google` now carry `nonce`, the raw value whose SHA-256 is the
+  token's `nonce` claim.
+- Google Sign-In asked for no nonce. `GoogleCredentialProvider` now asks with the SHA-256 of a
+  fresh one and puts the raw value on `AuthCredential.rawNonce`, as the Apple provider does.
+- Requests to the session server followed redirects, resending the refresh token or the bearer
+  to whichever host a 3xx named. A redirect is now refused and comes back as
+  `SessionServerError.rejected`.
+- An app extension sharing the session through an access group could, on refresh, write a
+  session the app had already signed out of back over the new one, or remove the app's new
+  session when its own old one was rejected. A refresh now checks the store first and adopts
+  what it holds.
+- `AuthCredential`, `AuthSession` and `LegacyCredential` printed their tokens through
+  `String(describing:)`, interpolation and `dump` — and so did every `AuthError` carrying a
+  `CredentialCollision`. They now print `<redacted>` in place of each secret.
+
 ## [12.1.1] - 2026-11-16
 
 An app launched while the keychain was locked now shows the person once it is unlocked, instead

@@ -35,6 +35,8 @@ final class FakeWorker: @unchecked Sendable {
     var firebaseUnavailable = false
     var deletedUserIDs: Set<String> = []
     var unreachablePaths: Set<String> = []
+    /// Paths answered with a 307 to another URL.
+    var redirects: [String: URL] = [:]
 
     init() {
         baseURL = URL(string: "https://\(UUID().uuidString.lowercased()).worker.test")!
@@ -64,6 +66,11 @@ final class FakeWorker: @unchecked Sendable {
     }
 
     /// Answers one request: a status, a body, and how long to wait before answering.
+    /// Where a request is redirected to, when a test asked for one.
+    func redirect(for request: URLRequest) -> URL? {
+        lock.withLock { redirects[request.url?.path() ?? ""] }
+    }
+
     func respond(to request: URLRequest) -> (status: Int, body: Data, delay: TimeInterval)? {
         lock.withLock {
             let path = request.url?.path() ?? ""
@@ -226,6 +233,17 @@ final class FakeWorkerProtocol: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        if let url = request.url,
+           let worker = url.host().flatMap(Self.worker(for:)),
+           let target = worker.redirect(for: request) {
+            let response = HTTPURLResponse(url: url, statusCode: 307, httpVersion: "HTTP/1.1", headerFields: ["Location": target.absoluteString])!
+            var next = request
+            next.url = target
+            client?.urlProtocol(self, wasRedirectedTo: next, redirectResponse: response)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
         guard let url = request.url,
               let worker = url.host().flatMap(Self.worker(for:)),
               let answer = worker.respond(to: request) else {

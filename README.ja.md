@@ -234,7 +234,7 @@ SessionAuthenticator(
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "12.1.0")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "12.1.2")
 ]
 ```
 

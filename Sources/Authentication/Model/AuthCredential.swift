@@ -21,11 +21,11 @@ public struct AuthCredential: Sendable, Equatable {
     /// The OAuth access token, which only Google supplies; `nil` for Apple and anonymous.
     public let accessToken: String?
 
-    /// The unhashed nonce that was sent, in SHA-256 form, with the Apple authorization request.
+    /// The unhashed nonce that was sent, in SHA-256 form, with the Apple or Google request.
     ///
-    /// The server matches it against the nonce claim inside the identity token, which is what
-    /// makes a captured token useless in a replay. Put the raw value here, never the hash.
-    /// `nil` outside the Apple flow.
+    /// Sent to the server as `nonce`, which checks that its SHA-256 is the nonce claim inside the
+    /// identity token: a captured token is useless without it. Put the raw value here, never the
+    /// hash. `nil` for anonymous sign-in.
     public let rawNonce: String?
 
     /// The user's name, which Apple returns only on the first authorization.
@@ -82,4 +82,26 @@ public struct AuthCredential: Sendable, Equatable {
 
     /// A credential that asks for an anonymous session and carries no tokens.
     public static let anonymous = AuthCredential(provider: .anonymous)
+}
+
+// Logs, crash reports and `dump` print a value through these. The tokens stay out of all of them.
+extension AuthCredential: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    public var description: String {
+        "AuthCredential(provider: \(provider.rawValue), idToken: \(Redacted.mark(idToken)), "
+            + "accessToken: \(Redacted.mark(accessToken)), rawNonce: \(Redacted.mark(rawNonce)), "
+            + "authorizationCode: \(Redacted.mark(authorizationCode)))"
+    }
+
+    public var debugDescription: String { description }
+
+    public var customMirror: Mirror {
+        Mirror(self, children: ["provider": provider.rawValue, "secrets": "<redacted>"], displayStyle: .struct)
+    }
+}
+
+/// How a secret appears in a description: whether there is one, never what it is.
+private enum Redacted {
+    static func mark(_ secret: String?) -> String {
+        secret == nil ? "nil" : "<redacted>"
+    }
 }

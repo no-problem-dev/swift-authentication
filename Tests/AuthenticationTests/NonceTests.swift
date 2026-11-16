@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import AuthenticationApple
+@testable import Authentication
 
 @Suite("Nonce")
 struct NonceTests {

@@ -74,7 +74,7 @@ struct SessionServer: Sendable {
             throw SessionCredentialError.invalidCredential(credential.provider)
         }
         let path: String
-        let body: [String: String]
+        var body: [String: String]
         switch credential.provider {
         case .apple:
             path = "v1/auth/apple"
@@ -85,6 +85,8 @@ struct SessionServer: Sendable {
         default:
             throw SessionCredentialError.invalidCredential(credential.provider)
         }
+        // The raw value whose SHA-256 is the token's nonce claim; the server checks the two match.
+        body["nonce"] = credential.rawNonce
         return try await session(from: post(path, body: body, bearer: bearer))
     }
 
@@ -138,7 +140,7 @@ struct SessionServer: Sendable {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await urlSession.data(for: request)
+            (data, response) = try await urlSession.data(for: request, delegate: RefusingRedirects.shared)
         } catch let error as URLError {
             throw SessionServerError.unreachable(error)
         }
@@ -150,6 +152,23 @@ struct SessionServer: Sendable {
             throw SessionServerError.rejected(status: http.statusCode, reason: reason)
         }
         return data
+    }
+
+    /// Keeps every request on `baseURL`'s host. URLSession follows a redirect with the same body
+    /// and headers, so one pointing elsewhere — a misconfigured route, a hijacked record — would
+    /// hand the refresh token or the bearer to that host. The server never redirects these
+    /// endpoints; a 3xx comes back as a rejection instead.
+    private final class RefusingRedirects: NSObject, URLSessionTaskDelegate, Sendable {
+        static let shared = RefusingRedirects()
+
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest
+        ) async -> URLRequest? {
+            nil
+        }
     }
 
     private func session(from data: Data) throws -> AuthSession {
