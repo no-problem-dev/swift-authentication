@@ -259,16 +259,38 @@ actor DeviceSession {
         do {
             fresh = try await server.refresh(refreshToken: session.refreshToken)
         } catch let error as SessionServerError where error.status == 401 || error.isAccountDeleted {
-            if generation == startedAt { try replace(with: nil) }
+            if generation == startedAt {
+                guard try storeStillHolds(session) else { return try latestOrSignedOut() }
+                try replace(with: nil)
+            }
             throw error.isAccountDeleted ? AuthError.accountDeleted : AuthError.notAuthenticated
         }
-        guard generation == startedAt else {
-            // Signed out or switched accounts while the refresh was in flight: that wins.
-            guard let latest = try current() else { throw AuthError.notAuthenticated }
-            return latest
-        }
+        // Signed out or switched accounts while the refresh was in flight — here, or in another
+        // process sharing the store: that wins.
+        guard generation == startedAt, try storeStillHolds(session) else { return try latestOrSignedOut() }
         try replace(with: fresh)
         return fresh
+    }
+
+    /// Whether the store still holds `session`. When it holds another, or none, that becomes the
+    /// current session.
+    ///
+    /// An app extension in the same keychain access group keeps its own copy in memory, so its
+    /// copy can be one the app has since signed out of or switched away from. Writing a refresh's
+    /// outcome over the store then would bring the previous user back, or remove the new one.
+    private func storeStillHolds(_ session: AuthSession) throws -> Bool {
+        let stored = try store.load()
+        guard stored?.refreshToken != session.refreshToken else { return true }
+        cached = stored
+        isLoaded = true
+        generation += 1
+        announceIfChanged()
+        return false
+    }
+
+    private func latestOrSignedOut() throws -> AuthSession {
+        guard let latest = try current() else { throw AuthError.notAuthenticated }
+        return latest
     }
 
     // MARK: - Writing and observing

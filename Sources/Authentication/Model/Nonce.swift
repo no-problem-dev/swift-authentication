@@ -1,13 +1,17 @@
 import Foundation
 import CryptoKit
 
-/// Makes and hashes the nonce that ties an Apple identity token to a single sign-in attempt.
-enum Nonce {
+/// Makes and hashes the nonce that ties an Apple or Google identity token to one sign-in attempt.
+///
+/// The provider is asked with the SHA-256 and puts it in the token's `nonce` claim; the raw value
+/// travels on ``AuthCredential/rawNonce`` to the server, which checks that its hash is the claim.
+/// Someone holding only a token cannot produce the raw value.
+package enum Nonce {
     /// Returns a fresh nonce drawn from the system's cryptographic random source.
     ///
     /// Never reuse one across attempts: single use is the whole reason a captured identity
     /// token cannot be replayed.
-    static func randomNonceString(length: Int = 32) -> String {
+    package static func randomNonceString(length: Int = 32) -> String {
         precondition(length > 0)
         let charset: [Character] =
             Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
@@ -31,7 +35,7 @@ enum Nonce {
 
     /// Returns the hex-encoded SHA-256 of a nonce, which is the value that goes on the
     /// authorization request. The raw nonce stays local until it travels on the credential.
-    static func sha256(_ input: String) -> String {
+    package static func sha256(_ input: String) -> String {
         let hashed = SHA256.hash(data: Data(input.utf8))
         return hashed.map { String(format: "%02x", $0) }.joined()
     }

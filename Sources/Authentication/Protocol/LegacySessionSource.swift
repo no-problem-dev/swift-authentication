@@ -11,6 +11,22 @@ public enum LegacyCredential: Sendable, Equatable {
     case firebaseRefreshToken(String)
 }
 
+// Logs, crash reports and `dump` print a value through these. The token stays out of all of them.
+extension LegacyCredential: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    public var description: String {
+        switch self {
+        case .firebaseIDToken: "firebaseIDToken(<redacted>)"
+        case .firebaseRefreshToken: "firebaseRefreshToken(<redacted>)"
+        }
+    }
+
+    public var debugDescription: String { description }
+
+    public var customMirror: Mirror {
+        Mirror(self, children: [description: "<redacted>"], displayStyle: .enum)
+    }
+}
+
 /// A session an earlier version of the app left on the device, which the session server can
 /// trade for one of its own.
 ///

@@ -32,13 +32,16 @@ public final class GoogleCredentialProvider: CredentialProvider, @unchecked Send
     private func acquireOnMain() async throws -> AuthCredential {
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
 
+        // Google puts the hash in the ID token's nonce claim; the server is sent the raw value
+        // and checks the two match, as for Apple.
+        let rawNonce = Nonce.randomNonceString()
         do {
-            let result = try await Self.presentSignIn()
+            let result = try await Self.presentSignIn(nonce: Nonce.sha256(rawNonce))
             guard let idToken = result.user.idToken?.tokenString else {
                 throw AuthError.credentialAcquisitionFailed(GoogleAuthError.missingIDToken)
             }
             let accessToken = result.user.accessToken.tokenString
-            return AuthCredential(provider: .google, idToken: idToken, accessToken: accessToken)
+            return AuthCredential(provider: .google, idToken: idToken, accessToken: accessToken, rawNonce: rawNonce)
         } catch let error as AuthError {
             throw error
         } catch {
@@ -50,17 +53,17 @@ public final class GoogleCredentialProvider: CredentialProvider, @unchecked Send
     }
 
     @MainActor
-    private static func presentSignIn() async throws -> GIDSignInResult {
+    private static func presentSignIn(nonce: String) async throws -> GIDSignInResult {
         #if canImport(UIKit)
         guard let presenter = TopViewControllerProvider.topViewController() else {
             throw AuthError.configuration("Google Sign-In: no presenting UIViewController was found")
         }
-        return try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter)
+        return try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter, hint: nil, additionalScopes: nil, nonce: nonce)
         #elseif canImport(AppKit)
         guard let window = NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first else {
             throw AuthError.configuration("Google Sign-In: no presenting NSWindow was found")
         }
-        return try await GIDSignIn.sharedInstance.signIn(withPresenting: window)
+        return try await GIDSignIn.sharedInstance.signIn(withPresenting: window, hint: nil, additionalScopes: nil, nonce: nonce)
         #else
         throw AuthError.configuration("Google Sign-In: this platform is not supported")
         #endif

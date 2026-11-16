@@ -8,6 +8,10 @@ import Authentication
 /// background task — can read the session too. Keychain items survive deleting the app, so a
 /// reinstall on the same device comes back as the same user.
 ///
+/// Not `ThisDeviceOnly`, on purpose: a phone set up from an encrypted backup of the old one keeps
+/// the session, and an anonymous account — which has nothing else to sign back in with — keeps
+/// its records. Not synchronizable either: the item never goes to iCloud Keychain.
+///
 /// While the device's protected data is not available — before the first unlock, or during a
 /// prewarmed launch while locked — ``load()`` throws ``ProtectedDataUnavailable`` instead of
 /// answering "no session", even when the keychain said the item was not found.
@@ -39,7 +43,9 @@ public struct KeychainSessionStore: SessionStore {
     ///   - service: The keychain service the item is filed under.
     ///   - account: The keychain account the item is filed under.
     ///   - accessGroup: A keychain access group to share the session with — an app extension
-    ///     such as a widget. `nil` keeps it to the app.
+    ///     such as a widget. `nil` keeps it to the app. Each process keeps its own copy in
+    ///     memory; a refresh checks the store first, so an extension holding a session the app
+    ///     has since left neither writes it back nor removes the app's new one.
     ///   - protectedData: Asked before an item that was not found is reported as no session.
     ///     ``KeychainProtectedDataProbe`` by default.
     public init(

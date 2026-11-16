@@ -237,7 +237,7 @@ API reference for every module: the DocC catalog in each module under [`Sources/
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "12.1.1")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "12.1.2")
 ]
 ```
 
