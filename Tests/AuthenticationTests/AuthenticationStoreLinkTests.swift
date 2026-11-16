@@ -23,6 +23,8 @@ struct AuthenticationStoreLinkTests {
     private let anonymous = AuthUser(id: "anon-1", isAnonymous: true)
     private let linked = AuthUser(id: "anon-1", isAnonymous: false, providerIDs: [.apple])
     private let existing = AuthUser(id: "existing-9", providerIDs: [.apple])
+    private let appleCredential = AuthCredential(provider: .apple, idToken: "apple-id", rawNonce: "nonce")
+    private let googleCredential = AuthCredential(provider: .google, idToken: "google-id", accessToken: "access")
 
     /// A store already signed in as the anonymous user.
     private func signedInStore(
@@ -68,7 +70,7 @@ struct AuthenticationStoreLinkTests {
     func linkCollision() async {
         let authenticator = MockAuthenticator(stubbedUser: anonymous)
         authenticator.linkError = AuthError.credentialAlreadyInUse(
-            CredentialCollision(provider: .apple, email: "a@example.com")
+            CredentialCollision(credential: AuthCredential(provider: .apple, idToken: "id", rawNonce: "n"), email: "a@example.com")
         )
         let store = await signedInStore(authenticator)
 
@@ -98,14 +100,14 @@ struct AuthenticationStoreLinkTests {
 
     // MARK: - Resolving a collision
 
-    @Test("signIn(resolving:) uses the replacement credential and acquires nothing")
-    func resolveWithRenewal() async throws {
+    @Test("signIn(resolving:) lets the authenticator reuse the collided credential and acquires nothing")
+    func resolveWithCollidedCredential() async throws {
         let authenticator = MockAuthenticator(stubbedUser: anonymous)
         authenticator.resolvedUser = existing
         let provider = MockCredentialProvider(providerID: .apple)
         let store = await signedInStore(authenticator, providers: [provider])
 
-        try await store.signIn(resolving: CredentialCollision(provider: .apple, renewedCredential: "renewed"))
+        try await store.signIn(resolving: CredentialCollision(credential: appleCredential))
         await waitUntil { store.state.user == existing }
 
         #expect(authenticator.resolveCallCount == 1)
@@ -114,14 +116,14 @@ struct AuthenticationStoreLinkTests {
         #expect(store.state == .authenticated(existing))
     }
 
-    /// The Apple case: the nonce inside the collided token is spent, so the only way in is a
-    /// new authorization. Exchanging the collided credential again is what must never happen.
-    @Test("without a usable replacement, a fresh credential is acquired — the collided one is never reused")
+    /// An authenticator that cannot use the collided token again — it expired, or its server
+    /// spends the nonce — throws the collision back, and the store asks the provider afresh.
+    @Test("when the authenticator cannot reuse the collided credential, a fresh one is acquired")
     func resolveAcquiresFreshCredential() async throws {
         let collided = AuthCredential(provider: .apple, idToken: "spent", rawNonce: "spent-nonce")
         let fresh = AuthCredential(provider: .apple, idToken: "fresh", rawNonce: "fresh-nonce")
         let authenticator = MockAuthenticator(stubbedUser: existing)
-        authenticator.linkError = AuthError.credentialAlreadyInUse(CredentialCollision(provider: .apple))
+        authenticator.linkError = AuthError.credentialAlreadyInUse(CredentialCollision(credential: collided))
         let provider = MockCredentialProvider(providerID: .apple, result: .success(fresh))
         let store = await signedInStore(authenticator, providers: [provider])
 
@@ -146,7 +148,7 @@ struct AuthenticationStoreLinkTests {
         let store = await signedInStore(authenticator)
 
         await #expect {
-            try await store.signIn(resolving: CredentialCollision(provider: .google))
+            try await store.signIn(resolving: CredentialCollision(credential: googleCredential))
         } throws: { ($0 as? AuthError)?.code == .unsupportedProvider }
     }
 
@@ -157,7 +159,7 @@ struct AuthenticationStoreLinkTests {
         let store = await signedInStore(authenticator, providers: [provider])
 
         await #expect {
-            try await store.signIn(resolving: CredentialCollision(provider: .apple))
+            try await store.signIn(resolving: CredentialCollision(credential: appleCredential))
         } throws: { ($0 as? AuthError)?.code == .cancelled }
         #expect(authenticator.signInCallCount == 0)
         #expect(store.state == .authenticated(anonymous))
@@ -170,7 +172,7 @@ struct AuthenticationStoreLinkTests {
         let store = await signedInStore(authenticator)
 
         await #expect {
-            try await store.signIn(resolving: CredentialCollision(provider: .apple, renewedCredential: "r"))
+            try await store.signIn(resolving: CredentialCollision(credential: appleCredential))
         } throws: { ($0 as? AuthError)?.code == .sessionExchangeFailed }
         #expect(store.state == .authenticated(anonymous))
     }
@@ -182,14 +184,14 @@ struct AuthenticationStoreLinkTests {
         let store = await signedInStore(authenticator)
 
         await #expect {
-            try await store.signIn(resolving: CredentialCollision(provider: .google, renewedCredential: "r"))
+            try await store.signIn(resolving: CredentialCollision(credential: googleCredential))
         } throws: { ($0 as? AuthError)?.code == .accountExistsWithDifferentProvider }
         #expect(store.state == .authenticated(anonymous))
     }
 
     @Test("AuthError.code covers the collision and link cases")
     func codesForNewCases() {
-        #expect(AuthError.credentialAlreadyInUse(CredentialCollision(provider: .apple)).code == .credentialAlreadyInUse)
+        #expect(AuthError.credentialAlreadyInUse(CredentialCollision(credential: appleCredential)).code == .credentialAlreadyInUse)
         #expect(AuthError.linkFailed(TestError()).code == .linkFailed)
         #expect(AuthError.accountExistsWithDifferentProvider(provider: .apple, email: nil).code == .accountExistsWithDifferentProvider)
     }

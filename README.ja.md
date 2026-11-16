@@ -2,7 +2,7 @@
 
 # swift-authentication
 
-vendor 非依存なコア抽象に、Firebase / Apple / Google / REST の具象を**ターゲット単位で差し込む**認証パッケージ。
+アプリのサーバーが発行するセッションでサインインする、iOS 向けのパッケージ。Apple と Google は本人を確かめる手段で、ユーザーの ID とトークンはアプリのサーバーが発行する。
 
 ![Swift](https://img.shields.io/badge/Swift-6.2-orange.svg)
 ![Platforms](https://img.shields.io/badge/Platforms-iOS%2017+%20%7C%20macOS%2014+-blue.svg)
@@ -11,68 +11,55 @@ vendor 非依存なコア抽象に、Firebase / Apple / Google / REST の具象�
 
 ## 設計
 
-認証を 3 つの責務に分離し、それぞれを vendor 非依存なプロトコルとして規定する。具象は
-別ターゲットで実装し、合成ルート（アプリ起動時）で差し込む。
+- **セッションはアプリのサーバーが発行する。** アプリの Worker（`@studio/app-auth`）が、ユーザーの ID・24時間のアクセストークン・端末ごとのリフレッシュトークンを発行する。要求はすべてアプリの独自ドメインに送るので、外の会社の認証サービスに届くかどうかに左右されない（たとえば中国本土からは Google のエンドポイントに届かない）
+- **Apple と Google は本人を確かめる手段。** 端末がそれぞれの ID トークンを送り、サーバーが公開キーで確かめて、今のアカウントにつなぐか、そのトークンが付いているアカウントでサインインする
+- **Firebase はこのパッケージに含めない。** Firebase Authentication から移すアプリは、移し替えの間だけ [swift-authentication-firebase](https://github.com/no-problem-dev/swift-authentication-firebase) を使う。前のバージョンが端末に残したセッションをサーバーで交換し、ユーザーの ID をそのまま引き継ぐ
 
 | 責務 | プロトコル（コア） | 具象（別ターゲット） |
 |---|---|---|
 | 資格情報の取得 | `CredentialProvider` | `AppleCredentialProvider` / `GoogleCredentialProvider` |
-| セッション交換 | `Authenticator` | `FirebaseAuthenticator` |
-| ログイン後処理（冪等） | `PostAuthenticationAction` | `APIUserProvisioning`（REST） |
+| セッション交換 | `Authenticator` | `SessionAuthenticator` |
+| Bearer トークン | `AuthTokenProviding` | `SessionTokenProvider` |
 
-これらを束ねる `@Observable` な **`AuthenticationStore`**（`@MainActor`）が `state` を公開し、
-画面はこれを観測する。
+これらを束ねる `@Observable` な **`AuthenticationStore`**（`@MainActor`）が `state` を公開し、画面はこれを観測する。サインインの後にアプリがすることは、アプリの責務とする。
 
 ### ターゲット構成
 
 | ターゲット | 役割 | 外部依存 |
 |---|---|---|
 | **`Authentication`** | コア抽象（プロトコル・値型・`AuthenticationStore`） | **なし** |
+| **`AuthenticationSession`** | アプリのサーバーのセッション：サインイン・つなぐ・再取得・キーチェーンへの保存・古いセッションの交換 | Foundation / Security（システム） |
 | **`AuthenticationUI`** | SwiftUI ビュー + Environment DI | SwiftUI（システム） |
 | **`AuthenticationApple`** | Apple 資格情報取得 | AuthenticationServices / CryptoKit（システム） |
 | **`AuthenticationGoogle`** | Google 資格情報取得 | GoogleSignIn |
-| **`AuthenticationFirebase`** | Firebase でのセッション交換・設定 | FirebaseAuth |
-| **`AuthenticationAPI`** | REST でのログイン後処理 | swift-api-client |
 
-**コア（`Authentication`）とUI（`AuthenticationUI`）はベンダー SDK に依存しない。**
-画面はこの 2 つだけに依存できるため、SwiftUI プレビューで Firebase / GoogleSignIn を
-読み込まない。具象（Firebase 等）は合成ルートでのみ import する。
+SDK に依存するのは `AuthenticationGoogle` だけ。画面は `Authentication` と `AuthenticationUI` だけに依存するので、SwiftUI プレビューはほかに何も読み込まない。
 
 ## 使い方
 
-### 1. 合成ルートで `AuthenticationStore` を組み立てる
+### 1. 合成ルートで `AuthenticationStore` を作る
 
 ```swift
 import SwiftUI
 import Authentication
 import AuthenticationUI
-import AuthenticationFirebase
+import AuthenticationSession
 import AuthenticationApple
-import AuthenticationGoogle
-import AuthenticationAPI
-import APIClient
 
 @main
 struct MyApp: App {
     @State private var store: AuthenticationStore
+    private let authenticator: SessionAuthenticator
 
     init() {
-        FirebaseConfigurator.configure()   // 本番。エミュレータは .configure(environment: .emulator())
-
-        let apiClient = APIClientImpl(
-            baseURL: URL(string: "https://api.example.com")!,
-            authTokenProvider: APITokenProviderAdapter(FirebaseTokenProvider())
+        authenticator = SessionAuthenticator(
+            baseURL: URL(string: "https://api.example.com")!,   // 独自ドメイン。workers.dev は使わない
+            installID: { InstallID.current },                   // アプリが UserDefaults に持つ UUID
+            accountDeletionPath: "v1/account"
         )
-
         _store = State(initialValue: AuthenticationStore(
-            authenticator: FirebaseAuthenticator(
-                accountDeletion: APIAccountDeletion(apiClient: apiClient, path: "/v1/me")
-            ),
-            postAuthentication: APIUserProvisioning(apiClient: apiClient),
-            credentialProviders: [
-                AppleCredentialProvider(),
-                GoogleCredentialProvider(clientID: FirebaseConfigurator.googleClientID ?? "")
-            ]
+            authenticator: authenticator,
+            credentialProviders: [AppleCredentialProvider()]
         ))
     }
 
@@ -80,13 +67,7 @@ struct MyApp: App {
         WindowGroup {
             AuthenticatedRootView(
                 loading: { ProgressView() },
-                unauthenticated: {
-                    VStack(spacing: 16) {
-                        GoogleSignInButton()
-                        AppleSignInButton()
-                    }
-                    .padding(.horizontal, 32)
-                },
+                unauthenticated: { ProgressView().task { try? await authenticator.establishSession() } },
                 error: { error in Text(error.localizedDescription) },
                 authenticated: { user in MainView(userID: user.id) }
             )
@@ -94,6 +75,14 @@ struct MyApp: App {
         }
     }
 }
+```
+
+API クライアントは `authenticator.tokenProvider` から Bearer トークンを受け取る。
+
+```swift
+let token = try await authenticator.tokenProvider.requiredToken()
+// 401 を受けたら1回だけ
+let renewed = try await authenticator.tokenProvider.requiredToken(forceRefresh: true)
 ```
 
 ### 2. 画面（プレビュー可能・ベンダー非依存）
@@ -116,7 +105,6 @@ struct MainView: View {
 }
 
 #Preview {
-    // Firebase 不要。スタブで生成。
     MainView(userID: "preview")
         .authenticationStore(.previewUnauthenticated)
 }
@@ -124,112 +112,103 @@ struct MainView: View {
 
 ### 状態
 
-`AuthenticationState` の遷移:
+`AuthenticationState` の遷移：
 
-- `.checking` — 起動時に保存済みセッションを確認中
-- `.unauthenticated` — セッションなし
-- `.authenticatedPendingProvisioning` — 交換済み・ログイン後処理待ち
-- `.authenticated(AuthUser)` — 完全に認証済み
-- `.error(any Error)` — エラー
+- `.checking` — 起動時に保存済みセッションを読んでいる
+- `.unauthenticated` — セッションが無い
+- `.authenticated(AuthUser)` — サインイン済み
+- `.error(any Error)` — 交換に失敗した
 
-アカウントが使えるのは `.authenticated` だけ。プロビジョニング待ちの間はセッションこそ
-あるが、画面はローディングのままにする。
+### 起動時にセッションを確立する
 
-### ログイン後処理（任意）
+`establishSession()` が、端末が誰としてサインインするかを決める。
 
-`APIUserProvisioning` はセッション成立後に `POST <path>`（既定 `/auth/initialize`）を呼ぶ。
-Firebase ID トークンが `Authorization: Bearer` で自動付与される。ストアは
-**認証セッション中に 1 回だけ** 呼ぶが、再試行や再インストールでサーバは複数回受け取るため、
-エンドポイント側も冪等にすること。プロビジョニング不要なら `postAuthentication` を省略できる。
+1. 保存済みのセッションがあれば、それを使う。アクセストークンの期限が5分を切っていれば先に再取得する。再取得がサーバーに届かなくても、保存済みのセッションを使う
+2. 無ければ、`LegacySessionSource` が前のバージョンのセッションを持っているとき、`/v1/auth/firebase` で交換する。ユーザーの ID は変わらない。**交換に失敗しても匿名のセッションは作らない**（作ると、その人の記録から外れる）。エラーを投げるので、通信が戻ったときにもう一度呼ぶ
+3. どちらも無ければ、`/v1/auth/anonymous` で新しい匿名のセッションを作る
 
-### ログイン後処理が失敗したときにやり直す
+`store.signIn(with: .anonymous)` も同じ手順を通る。同時に呼ばれたときは1回の試みを分け合う。
 
-ログイン後処理が失敗すると `state` は `.error` になるが、セッションはサインインしたまま残る。サインアウトではなく、処理だけをやり直す「もう一度試す」を出せる:
+### トークン
 
-```swift
-Button("もう一度試す") {
-    Task { await store.retryPostAuthentication() }
-}
-```
-
-`state` は `.authenticatedPendingProvisioning` を経て `.authenticated` に、失敗すれば新しい失敗で `.error` に戻る。いまのエラーがログイン後処理のものでないとき（交換の失敗・サインアウト後・やり直しの最中）は何もしないので、二度押しても処理は 1 回だけ走る。サーバー側は今までどおり、同じ要求を何度受けてもよいようにしておく。
+`SessionTokenProvider` は、期限が5分を切る前に `/v1/auth/refresh` で再取得する。同時に来た再取得は1つにまとめ、`forceRefresh: true` なら必ず再取得する。サーバーがリフレッシュトークンを断ったら、端末からセッションを消し、`authStateChanges()` が `nil` を流し、`AuthError.notAuthenticated` を投げる。早めに再取得しようとしてサーバーに届かなかったときは、まだ使えるトークンを返す。要求のタイムアウトは、指定しなければ20秒（`requestTimeout:`）。
 
 ### 匿名アカウントを引き継ぐ
 
-`signIn` はセッションを置き換えるので、匿名ユーザーが Apple でサインインすると user id が変わり、匿名アカウントのデータは置き去りになる。`link` は今のアカウントに資格情報を付け、id を保つ:
+`signIn` はセッションを置き換えるので、匿名ユーザーが Apple でサインインすると新しいユーザー ID になり、匿名アカウントのデータから離れる。`link` は今のアカウントに資格情報をつなぎ、ID を保つ。
 
 ```swift
 do {
     try await store.link(using: .apple)
 } catch AuthError.credentialAlreadyInUse(let collision) {
-    // このプロバイダのアカウントを既に持っている（多くは別の端末で作った）。
-    // 切り替えると user id が変わるので、確かめてから呼ぶ。
+    // このプロバイダのアカウントを既に持っている（多くは別の端末で作ったもの）。
+    // 切り替えるとユーザー ID が変わるので、先に本人に確かめる。
     try await store.signIn(resolving: collision)
 }
 ```
 
-衝突した資格情報をもう一度交換してはいけない。Apple の ID トークンに入った nonce は link で使われていて、Firebase は "Duplicate credential received" を返す。`signIn(resolving:)` は Firebase がエラーに載せて返した資格情報を使い、無いときはプロバイダのシートを出して取り直す。Firebase を直接呼ぶコードは、自前で写しを持たずに `FirebaseCredentialMapper.makeCredential(from:)` で変換できる。
+衝突は、衝突した資格情報そのものを持つ。サーバーはトークンを署名で確かめるので、`signIn(resolving:)` は Apple のシートを出し直さずに、同じトークンでオーナーのアカウントにサインインする。その間にトークンの期限が切れていれば、ストアがプロバイダのシートを出して新しく取る。
 
-### 再インストール後も匿名ユーザーを保つ
+### サインアウト
 
-`FirebaseConfigurator.configure()` は、インストール後の初回起動でサインアウトする。Firebase のセッションはアプリを消しても残るキーチェーンにあるので、これが無いと再インストールで前の持ち主のセッションが黙って戻る。Apple や Google でサインインするアプリはこの既定のままにする。
+`signOut()` はキーチェーンを先に消し、そのあと `/v1/auth/sign-out` で端末のキーの無効化をサーバーに頼む（届かなくてもよい）。オフラインでも動く。古いセッションも忘れるので、やり直すと古い人に戻らず、新しい匿名ユーザーになる。
 
-匿名ログインだけのアプリでは逆になる。匿名ユーザーにはサインインし直す手段が無く、サインアウトするとその uid と、サーバーが uid に紐づけて持つ記録に二度と届かない。`.keep` を渡すと再インストール後も同じ匿名ユーザーで戻り、サーバーの記録を読み直せる:
+### アカウントの削除
 
-```swift
-FirebaseConfigurator.configure(sessionAfterReinstall: .keep)
-```
+`store.deleteAccount()` は Bearer トークンを付けて `DELETE <accountDeletionPath>` を送り、サーバーが成功してからセッションを消す。Apple につないだアカウントなら、先に Apple のシートを出して新しい認可コードを取り、`{ "appleAuthorizationCode": … }` として送る。サーバーはこれで Apple のトークンを無効にする（審査ガイドライン 5.1.1(v)）。コードは1回きりで、5分ほどで切れるので、削除のときに取る。シートを閉じたら何も消さず、`AuthError.cancelled` を投げる。
 
-端末を持った人が匿名アカウントを引き継ぐことになるが、匿名アカウントは本人を表さないので許容できる。別の端末へのバックアップ復元や端末の消去では、キーチェーンも残らず新しい匿名ユーザーになる。
+### 拡張とセッションを分け合う
 
-### 退会をサーバーに任せる
-
-端末から Firebase のアカウントを消すと、最後のサインインが古いときに断られる（`requiresRecentLogin`）。先にサーバーのデータを消していると、その拒否はデータが消えた後に出る。`FirebaseAuthenticator` に `AccountDeletion` を渡すと（`APIAccountDeletion` は swift-api-client で `DELETE <path>` を送る）、`deleteAccount()` はサーバーを呼び、成功してからローカルのセッションを消す。渡さなければ今までどおり端末から消す。どちらの場合も、`deleteAccount()` がローカルのセッションまで消す。
-
-### トークンを強制的に更新する
-
-`AuthTokenProviding.token(forceRefresh:)` は、手元のトークンが期限内でも新しいものを取る。401 を受けた後に使う。トークンをクロージャで受ける transport には `tokenSource` を渡す:
+`KeychainSessionStore` は `kSecAttrAccessibleAfterFirstUnlock` で保存する。ウィジェットと分け合うときはアクセスグループを渡す。
 
 ```swift
-let token: @Sendable (_ forceRefresh: Bool) async throws -> String = FirebaseTokenProvider().tokenSource
+SessionAuthenticator(
+    baseURL: apiURL,
+    installID: { InstallID.current },
+    store: KeychainSessionStore(accessGroup: "TEAMID.com.example.shared")
+)
 ```
 
-### Sign in with Apple を使ったアカウントの削除
+キーチェーンの項目はアプリを消しても残るので、同じ端末で入れ直すと同じユーザーに戻る。テストとプレビューは `InMemorySessionStore` を使う。
 
-App Review ガイドライン 5.1.1(v) は、アカウント削除時に Apple のトークンを失効させることを求める。
-`AppleCredentialProvider` が返す資格情報は Apple の `authorizationCode` を持つ。これは 1 回限りで
-約 5 分で切れるので、削除の直前に改めて認可し、失効させてから削除する:
+### Firebase Authentication から移す
+
+[swift-authentication-firebase](https://github.com/no-problem-dev/swift-authentication-firebase) を足し、`FirebaseLegacySessionSource` を渡す。
 
 ```swift
-let fresh = try await AppleCredentialProvider().acquireCredential()
-if let code = fresh.authorizationCode {
-    try await firebaseAuthenticator.revokeAppleToken(authorizationCode: code)
-}
-try await firebaseAuthenticator.deleteAccount()
+import AuthenticationFirebase
+
+SessionAuthenticator(
+    baseURL: apiURL,
+    installID: { InstallID.current },
+    legacySource: FirebaseLegacySessionSource()
+)
 ```
+
+Firebase の ID トークンを1回だけ交換し、サーバーは Firebase の uid をそのままユーザー ID にする。交換の後は Firebase のセッションからサインアウトする。Firebase を使ったことのないアプリは、このパッケージを入れない。
 
 ### 独自プロバイダ
 
-`AuthProviderID` は拡張可能で、`CredentialProvider` / `Authenticator` /
-`PostAuthenticationAction` を実装すれば任意のバックエンド（Firestore 直叩き、独自 OIDC 等）を
-差し込める。
+`AuthProviderID` は拡張可能。`CredentialProvider` か `Authenticator` を実装すれば、ほかの手段も差し込める。
 
 ## ドキュメント
 
-全モジュールの API リファレンス: [`Sources/`](Sources) の各モジュールにある DocC カタログ。
+各モジュールの API リファレンスは [`Sources/`](Sources) 以下の各モジュールにある DocC カタログ。
 
 ## インストール
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "10.0.0")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "11.0.0")
 ]
 ```
 
-利用側ターゲットでは必要な product だけを依存に追加する。
+ターゲットに必要なプロダクトだけを追加する。
 
 - 画面モジュール → `AuthenticationUI`（+ `Authentication`）
-- 合成ルート（App 本体）→ `AuthenticationFirebase` / `AuthenticationApple` / `AuthenticationGoogle` / `AuthenticationAPI`
+- 合成ルート（App ターゲット）→ `AuthenticationSession` / `AuthenticationApple` / `AuthenticationGoogle`
+
+10.x から移すときは [CHANGELOG.md](CHANGELOG.md) を見る。
 
 ## 動作環境
 
@@ -239,4 +218,4 @@ dependencies: [
 
 ## ライセンス
 
-MIT License. 詳細は [LICENSE](LICENSE) を参照。
+MIT License。詳細は [LICENSE](LICENSE) を参照。

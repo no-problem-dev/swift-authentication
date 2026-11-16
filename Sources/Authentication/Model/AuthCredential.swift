@@ -2,8 +2,7 @@ import Foundation
 
 /// Proof of identity that the authentication server trades for a session.
 ///
-/// A neutral value that never mentions a provider SDK type, such as Firebase's own
-/// credential type. A ``CredentialProvider`` produces one, an ``Authenticator`` spends it.
+/// A neutral value that never mentions a provider SDK type. A ``CredentialProvider`` produces one, an ``Authenticator`` spends it.
 ///
 /// Build one through the factory that ships with the provider's target — for example
 /// `AuthCredential.apple(idToken:rawNonce:fullName:)` — rather than by hand, since each
@@ -39,8 +38,9 @@ public struct AuthCredential: Sendable, Equatable {
     ///
     /// Signing in does not need it. It exists for revoking the user's Sign in with Apple
     /// tokens when they delete their account, which App Review requires (guideline
-    /// 5.1.1(v)); with Firebase that is `FirebaseAuthenticator.revokeAppleToken(authorizationCode:)`.
-    /// Apple lets the code be redeemed once and only for about five minutes, so obtain a fresh
+    /// 5.1.1(v)): ``AuthenticationStore/deleteAccount()`` asks Apple for a fresh one and hands it
+    /// to ``Authenticator/deleteAccount(appleAuthorizationCode:)``, whose server revokes the
+    /// tokens with it. Apple lets the code be redeemed once and only for about five minutes, so obtain a fresh
     /// one immediately before deleting rather than keeping the one from sign-in. `nil` outside
     /// the Apple flow, and when Apple did not supply one.
     public let authorizationCode: String?

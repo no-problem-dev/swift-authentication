@@ -9,8 +9,7 @@ sign-in buttons.
 from it declaratively. It depends on no third-party SDK — only SwiftUI and
 AuthenticationServices — so screens built on it still render in previews.
 
-``AuthenticatedRootView`` takes one builder per stage of the session. Checking and pending
-provisioning share the loading branch, which is why there are four rather than five.
+``AuthenticatedRootView`` takes one builder per stage of the session.
 
 ```swift
 struct RootView: View {

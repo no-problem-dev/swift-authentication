@@ -2,7 +2,7 @@ import Foundation
 
 /// A failure somewhere in the sign-in flow, carrying the error that caused it.
 ///
-/// The type stays vendor-neutral while the originating error — from Firebase or GoogleSignIn,
+/// The type stays vendor-neutral while the originating error — from the session server or GoogleSignIn,
 /// say — travels as an associated value, so callers can inspect the cause without the core
 /// importing that SDK. Those payloads are `any Error`, which is why this enum is not
 /// `Equatable`; compare ``code`` instead.
@@ -19,22 +19,16 @@ public enum AuthError: Error {
     /// The authentication server rejected the credential or could not be reached. No session
     /// exists afterwards.
     case sessionExchangeFailed(any Error)
-    /// The session was established but the post-authentication work failed, leaving the user
-    /// signed in on the server and unprovisioned in the app.
+    /// The server rejected the session itself — a 401 that a refresh did not fix. Signing in
+    /// again is what fixes it.
     ///
-    /// A server that rejected the session or refused the account reports
-    /// ``sessionExpired(_:)`` or ``notPermitted(_:)`` instead, because those two need
-    /// different responses and this case cannot say which happened.
-    case postAuthenticationFailed(any Error)
-    /// The server rejected the session itself — a 401. Signing in again is what fixes it.
-    ///
-    /// The token was stale, revoked, or belongs to a disabled account. Which of those it was
-    /// does not change the response: obtain a new credential. A refresh has already been
-    /// tried by the time this is raised, so the one held now will not start working.
+    /// For an app's API client to raise: the token was stale, revoked, or belongs to a disabled
+    /// account. Which of those it was does not change the response: obtain a new session.
     ///
     /// Distinct from ``notPermitted(_:)``, where a new session changes nothing.
     case sessionExpired(any Error)
-    /// The server accepted the session and refused the operation anyway — a 403.
+    /// The server accepted the session and refused the operation anyway — a 403. For an app's
+    /// API client to raise.
     ///
     /// The account may not do this: a missing scope, a plan limit, a suspension. Signing out
     /// and back in produces the same refusal, so a flow that responds to it by
@@ -43,8 +37,8 @@ public enum AuthError: Error {
     /// Clearing the local session failed, which means stored credentials may still be on the
     /// device.
     case signOutFailed(any Error)
-    /// Account deletion failed and the account still exists. Providers commonly refuse when
-    /// the last sign-in is too old.
+    /// Account deletion failed and the account still exists — the deletion request did not
+    /// succeed, or the person backed out of the Apple authorization deletion needs.
     case deleteAccountFailed(any Error)
     /// The credential could not be linked because another account already owns it.
     ///
@@ -79,7 +73,6 @@ extension AuthError {
         case unsupportedProvider
         case credentialAcquisitionFailed
         case sessionExchangeFailed
-        case postAuthenticationFailed
         case sessionExpired
         case notPermitted
         case signOutFailed
@@ -101,7 +94,6 @@ extension AuthError {
         case .unsupportedProvider: .unsupportedProvider
         case .credentialAcquisitionFailed: .credentialAcquisitionFailed
         case .sessionExchangeFailed: .sessionExchangeFailed
-        case .postAuthenticationFailed: .postAuthenticationFailed
         case .sessionExpired: .sessionExpired
         case .notPermitted: .notPermitted
         case .signOutFailed: .signOutFailed

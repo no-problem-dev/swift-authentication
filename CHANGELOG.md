@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.0.0] - 2026-11-16
+
+The package now signs in with sessions the app's own server issues. Firebase and the REST
+provisioning target are gone: the names were neutral, but the collision handling, the
+post-sign-in step, account deletion and the dependencies were all built around Firebase.
+
+### Added
+
+- **`AuthenticationSession`**, the default authenticator. Depends on Foundation and Security only.
+  - `SessionAuthenticator: Authenticator` — anonymous sessions (`POST /v1/auth/anonymous`), Apple
+    and Google sign-in and linking (`/v1/auth/apple`, `/v1/auth/google`; a bearer token links),
+    a 409 as `AuthError.credentialAlreadyInUse`, sign-out (`/v1/auth/sign-out`, then the
+    keychain), deletion through the app's endpoint (`DELETE <accountDeletionPath>` with
+    `{ appleAuthorizationCode? }`), `currentUser()` from the keychain without a request,
+    `authStateChanges()`.
+  - `SessionAuthenticator.establishSession()` — the stored session, else a legacy session
+    exchanged at `/v1/auth/firebase`, else a new anonymous one. A failed legacy exchange throws
+    and never opens an anonymous account in its place.
+  - `SessionTokenProvider: AuthTokenProviding` — refreshes at `/v1/auth/refresh` when less than
+    five minutes are left, always for `forceRefresh: true`, joins concurrent refreshes into one,
+    and on a rejected refresh token removes the session and throws `AuthError.notAuthenticated`.
+  - `AuthSession`, `SessionStore`, `KeychainSessionStore` (`kSecAttrAccessibleAfterFirstUnlock`,
+    optional access group), `InMemorySessionStore`, `SessionServerError`,
+    `SessionCredentialError`.
+  - Requests time out after 20 seconds unless `requestTimeout:` says otherwise.
+- `LegacySessionSource` in `Authentication`: the session an earlier version of the app left on the
+  device, for the server to exchange. `swift-authentication-firebase` ships the Firebase one.
+- `AuthenticationStore.deleteAccount()` asks Apple for a fresh authorization code first when the
+  account is linked to Apple and an Apple provider is registered, and passes it on so the server
+  can revoke the person's Apple tokens (App Review guideline 5.1.1(v)). Backing out of the sheet
+  throws `AuthError.cancelled` and deletes nothing.
+
+### Changed
+
+- `AuthProviderID` raw values are `apple`, `google` and `anonymous` — the names the session server
+  uses — instead of Firebase's `apple.com` and `google.com`.
+- `CredentialCollision` carries the `credential` that collided instead of an opaque
+  `renewedCredential`. `provider` is now derived from it. The session server accepts the same
+  token again, so resolving a collision no longer needs a second Apple sheet.
+- `Authenticator.deleteAccount()` is `deleteAccount(appleAuthorizationCode:)`, and
+  `AccountDeletion.deleteAccount(of:)` is `deleteAccount(of:appleAuthorizationCode:)`.
+- `AuthUser.email` and `displayName` are `nil` under `SessionAuthenticator`, which the server
+  does not report.
+
+### Removed
+
+- `AuthenticationFirebase` and the firebase-ios-sdk dependency. They live on in
+  [swift-authentication-firebase](https://github.com/no-problem-dev/swift-authentication-firebase),
+  for apps that have not moved yet.
+- `AuthenticationAPI` (`APIUserProvisioning`, `UserProvisioningContract`,
+  `APITokenProviderAdapter`, `APIAccountDeletion`, `AccountDeletionContract`) and the
+  swift-api-client and swift-api-contract dependencies. The session server creates the user when
+  it issues the anonymous session, so there is nothing left to provision.
+- `PostAuthenticationAction`, `NoPostAuthentication`, `CompositePostAuthentication`,
+  `AuthenticationState.authenticatedPendingProvisioning`, `AuthError.postAuthenticationFailed`,
+  `AuthenticationStore.retryPostAuthentication()` and the store's `postAuthentication:` parameter.
+  What the app does after sign-in is the app's own.
+
+### Moving from 10.x
+
+| 10.x | 11.0.0 |
+|---|---|
+| `import AuthenticationFirebase` | `import AuthenticationSession`; add swift-authentication-firebase only while moving users off Firebase |
+| `FirebaseConfigurator.configure()` | Nothing, for a new app. While moving: only before `FirebaseLegacySessionSource` reads the old session |
+| `FirebaseAuthenticator(accountDeletion: APIAccountDeletion(apiClient:path:))` | `SessionAuthenticator(baseURL:installID:legacySource:accountDeletionPath:)` |
+| `FirebaseTokenProvider()` | `authenticator.tokenProvider` |
+| `APITokenProviderAdapter(provider)` | Read `tokenProvider.requiredToken(forceRefresh:)` from your API client, or adapt it there |
+| `AuthenticationStore(authenticator:postAuthentication:credentialProviders:)` | `AuthenticationStore(authenticator:credentialProviders:)`; run provisioning yourself on `.authenticated` |
+| `case .authenticatedPendingProvisioning` | Remove the case |
+| `store.retryPostAuthentication()` | Retry in the app |
+| `AuthError.postAuthenticationFailed` | Remove the case |
+| `CredentialCollision(provider:email:renewedCredential:)` | `CredentialCollision(credential:email:)` |
+| `collision.renewedCredential` | `collision.credential` |
+| `AuthProviderID(rawValue: "apple.com")`, stored `providerIDs` raw values | `.apple` (`"apple"`); migrate any stored raw values |
+| `authenticator.deleteAccount()` | `authenticator.deleteAccount(appleAuthorizationCode:)`, or `store.deleteAccount()` |
+| `revokeAppleToken(authorizationCode:)` before deleting | `store.deleteAccount()`; the server revokes with the code it receives |
+| `AccountDeletion.deleteAccount(of:)` | `deleteAccount(of:appleAuthorizationCode:)` |
+| `FirebaseConfigurator.googleClientID` for `GoogleCredentialProvider` | The client ID from `Info.plist` |
+
 ## [10.2.1] - 2026-11-08
 
 ### Changed

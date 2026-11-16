@@ -3,8 +3,8 @@ import Foundation
 
 /// An authenticator the test drives by hand.
 ///
-/// A successful `signIn(with:)` pushes the user into the `authStateChanges()` stream, which
-/// reproduces how Firebase's state-change listener behaves.
+/// A successful `signIn(with:)` pushes the user into the `authStateChanges()` stream, the way
+/// an authenticator reports a new session.
 @MainActor
 final class MockAuthenticator: Authenticator {
     var stubbedUser: AuthUser
@@ -15,14 +15,17 @@ final class MockAuthenticator: Authenticator {
     var linkedUser: AuthUser?
     var linkError: (any Error)?
     /// What `signIn(resolving:)` does. `nil` rethrows the collision, which is how an
-    /// authenticator says the collision carries no replacement it can use.
+    /// authenticator says it cannot use the collided credential again.
     var resolvedUser: AuthUser?
     var resolveError: (any Error)?
+    /// What `currentUser()` reports.
+    var storedUser: AuthUser?
 
     private(set) var signInCallCount = 0
     private(set) var signedInCredentials: [AuthCredential] = []
     private(set) var signOutCallCount = 0
     private(set) var deleteCallCount = 0
+    private(set) var deletedWithAppleCodes: [String?] = []
     private(set) var linkedCredentials: [AuthCredential] = []
     private(set) var resolveCallCount = 0
 
@@ -34,7 +37,7 @@ final class MockAuthenticator: Authenticator {
         (stream, continuation) = AsyncStream<AuthUser?>.makeStream()
     }
 
-    nonisolated func currentUser() async -> AuthUser? { nil }
+    func currentUser() async -> AuthUser? { storedUser }
 
     func signIn(with credential: AuthCredential) async throws -> AuthUser {
         signInCallCount += 1
@@ -65,8 +68,9 @@ final class MockAuthenticator: Authenticator {
         continuation.yield(nil)
     }
 
-    func deleteAccount() async throws {
+    func deleteAccount(appleAuthorizationCode: String?) async throws {
         deleteCallCount += 1
+        deletedWithAppleCodes.append(appleAuthorizationCode)
         if let deleteError { throw deleteError }
         continuation.yield(nil)
     }
@@ -94,29 +98,6 @@ final class MockCredentialProvider: CredentialProvider, @unchecked Sendable {
     func acquireCredential() async throws -> AuthCredential {
         acquireCallCount += 1
         return try result.get()
-    }
-}
-
-/// A post-authentication action that records who it ran for, and can be made to fail.
-final class MockPostAuthenticationAction: PostAuthenticationAction, @unchecked Sendable {
-    var error: (any Error)?
-    private let lock = NSLock()
-    private var _performCallCount = 0
-    private var _performedUserIDs: [String] = []
-
-    var performCallCount: Int { lock.withLock { _performCallCount } }
-    var performedUserIDs: [String] { lock.withLock { _performedUserIDs } }
-
-    init(error: (any Error)? = nil) {
-        self.error = error
-    }
-
-    func perform(for user: AuthUser) async throws {
-        lock.withLock {
-            _performCallCount += 1
-            _performedUserIDs.append(user.id)
-        }
-        if let error { throw error }
     }
 }
 

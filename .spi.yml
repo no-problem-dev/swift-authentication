@@ -3,8 +3,7 @@ builder:
   configs:
     - documentation_targets:
         - Authentication
-        - AuthenticationAPI
+        - AuthenticationSession
         - AuthenticationApple
-        - AuthenticationFirebase
         - AuthenticationGoogle
         - AuthenticationUI

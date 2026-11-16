@@ -4,9 +4,6 @@ import Authentication
 /// Shows a different subtree for each stage of the session.
 ///
 /// It reads the store from the environment and switches on its state, holding none of its own.
-/// Checking and pending provisioning share the loading branch, which is why there are four
-/// builders rather than five.
-///
 /// With no store in the environment it renders a configuration error instead of an empty
 /// screen, so a missed injection is visible during development rather than silent.
 public struct AuthenticatedRootView<
@@ -25,11 +22,10 @@ public struct AuthenticatedRootView<
     /// Creates the root view from one builder per stage.
     ///
     /// - Parameters:
-    ///   - loading: Shown while the stored session is being checked and while post-sign-in
-    ///     work runs.
+    ///   - loading: Shown while the stored session is being checked.
     ///   - unauthenticated: Shown when there is no session — the sign-in screen.
     ///   - error: Shown when the flow failed, receiving the underlying error.
-    ///   - authenticated: Shown once the user is signed in and provisioned.
+    ///   - authenticated: Shown once the user is signed in.
     public init(
         @ViewBuilder loading: @escaping () -> LoadingView,
         @ViewBuilder unauthenticated: @escaping () -> UnauthenticatedView,
@@ -53,7 +49,7 @@ public struct AuthenticatedRootView<
     @ViewBuilder
     private func content(for state: AuthenticationState) -> some View {
         switch state {
-        case .checking, .authenticatedPendingProvisioning:
+        case .checking:
             loadingView()
         case .unauthenticated:
             unauthenticatedView()
