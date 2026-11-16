@@ -29,6 +29,10 @@ final class FakeWorker: @unchecked Sendable {
     var refreshDelay: TimeInterval = 0
     var revokedRefreshTokens: Set<String> = []
     var failLegacyExchange = false
+    /// Refresh tokens Google refuses for good: the exchange answers 401 `legacy_credential_rejected`.
+    var rejectedFirebaseRefreshTokens: Set<String> = []
+    /// Google cannot be reached: a refresh-token exchange answers 503 `firebase_unavailable`.
+    var firebaseUnavailable = false
     var deletedUserIDs: Set<String> = []
     var unreachablePaths: Set<String> = []
 
@@ -109,10 +113,19 @@ final class FakeWorker: @unchecked Sendable {
                 return issue(for: userID)
 
             case "/v1/auth/firebase":
-                guard !failLegacyExchange, let idToken = body["idToken"] else {
+                // `firebase-token-<uid>` as an ID token, `firebase-refresh-<uid>` as a refresh token.
+                let userID: String
+                if let refreshToken = body["refreshToken"], body["idToken"] == nil {
+                    if firebaseUnavailable { return Self.error(503, "firebase_unavailable") }
+                    if rejectedFirebaseRefreshTokens.contains(refreshToken) {
+                        return Self.error(401, "legacy_credential_rejected")
+                    }
+                    userID = refreshToken.replacingOccurrences(of: "firebase-refresh-", with: "")
+                } else if !failLegacyExchange, let idToken = body["idToken"], body["refreshToken"] == nil {
+                    userID = idToken.replacingOccurrences(of: "firebase-token-", with: "")
+                } else {
                     return Self.error(401, "invalid_firebase_token")
                 }
-                let userID = idToken.replacingOccurrences(of: "firebase-token-", with: "")
                 if deletedUserIDs.contains(userID) { return Self.error(410, "account_deleted") }
                 return issue(for: userID, providers: ["anonymous"])
 

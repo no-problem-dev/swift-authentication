@@ -13,6 +13,16 @@ public struct KeychainSessionStore: SessionStore {
         public let status: OSStatus
     }
 
+    /// The item is there but is not a session this version reads — written by another format,
+    /// or damaged.
+    ///
+    /// Not removed on its own: whether to throw it away is the caller's decision. ``clear()``
+    /// removes it, and so does `SessionAuthenticator.signOut()`.
+    public struct UndecodableItem: Error, Equatable, Sendable {
+        /// What the decoder said, for logs.
+        public let reason: String
+    }
+
     private let service: String
     private let account: String
     private let accessGroup: String?
@@ -32,8 +42,8 @@ public struct KeychainSessionStore: SessionStore {
 
     /// Returns the stored session, or `nil` when there is none.
     ///
-    /// An item that no longer decodes — written by a format this version does not read — is
-    /// removed and reported as no session, so it cannot block every launch after it.
+    /// - Throws: ``Failure`` when the keychain could not be read, and ``UndecodableItem`` when
+    ///   an item is stored but is not a session. Neither means "no session".
     public func load() throws -> AuthSession? {
         var query = baseQuery
         query[kSecReturnData as String] = true
@@ -43,12 +53,14 @@ public struct KeychainSessionStore: SessionStore {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         switch status {
         case errSecSuccess:
-            guard let data = item as? Data,
-                  let session = try? JSONDecoder().decode(AuthSession.self, from: data) else {
-                try clear()
-                return nil
+            guard let data = item as? Data else {
+                throw UndecodableItem(reason: "the item holds no data")
             }
-            return session
+            do {
+                return try JSONDecoder().decode(AuthSession.self, from: data)
+            } catch {
+                throw UndecodableItem(reason: String(describing: error))
+            }
         case errSecItemNotFound:
             return nil
         default:

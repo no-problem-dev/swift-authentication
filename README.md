@@ -123,8 +123,8 @@ struct MainView: View {
 `establishSession()` decides what the device signs in as:
 
 1. A stored session is used as it is, refreshed first when its access token has less than five minutes left. When the refresh cannot reach the server, the stored session is still used.
-2. With none stored, a `LegacySessionSource` that still holds a session from an earlier version of the app has it exchanged at `/v1/auth/firebase`. The person keeps their user id. **When the exchange fails, no anonymous session is opened** — that would strand their records — and the call throws; call it again when the network is back.
-3. Otherwise a new anonymous session is opened at `/v1/auth/anonymous`.
+2. With none stored, a `LegacySessionSource` that still holds a session from an earlier version of the app has it exchanged at `/v1/auth/firebase` — `{ idToken }` or `{ refreshToken }`, whichever it holds. The person keeps their user id. **When the exchange fails in a way that may pass — no network, a 503 — no session is opened** (that would strand their records) and the call throws; call it again later. When the server says it can never succeed — 410 `account_deleted`, or 401 `legacy_credential_rejected` because Google refused the refresh token for good — the legacy session is discarded and step 3 follows.
+3. Otherwise a new anonymous session is opened at `/v1/auth/anonymous`. With `SessionAuthenticator(…, anonymous: .disabled)` — an app where signing in is optional — none is opened: the call throws `AuthError.notAuthenticated` and the device stays signed out until the person signs in with Apple or Google.
 
 `store.signIn(with: .anonymous)` goes through the same steps. Concurrent calls share one attempt.
 
@@ -195,11 +195,11 @@ SessionAuthenticator(
 )
 ```
 
-Keychain items survive deleting the app, so a reinstall on the same device comes back as the same user. Tests and previews use `InMemorySessionStore`.
+Keychain items survive deleting the app, so a reinstall on the same device comes back as the same user. An item that is not a session is reported as `KeychainSessionStore.UndecodableItem`, not removed behind the caller's back; `signOut()` removes it. Tests and previews use `InMemorySessionStore`.
 
 ### Moving off Firebase Authentication
 
-Add [swift-authentication-firebase](https://github.com/no-problem-dev/swift-authentication-firebase) and pass its `FirebaseLegacySessionSource`:
+Add [swift-authentication-firebase](https://github.com/no-problem-dev/swift-authentication-firebase) and pass its `FirebaseKeychainLegacySessionSource`. It reads the refresh token Firebase Authentication left in the keychain — without the Firebase SDK — and the server trades it at Google:
 
 ```swift
 import AuthenticationFirebase
@@ -207,11 +207,11 @@ import AuthenticationFirebase
 SessionAuthenticator(
     baseURL: apiURL,
     installID: { InstallID.current },
-    legacySource: FirebaseLegacySessionSource()
+    legacySource: FirebaseKeychainLegacySessionSource(googleAppID: "1:1234567890:ios:abcdef")
 )
 ```
 
-The Firebase ID token is exchanged once, the server keeps the Firebase uid as the user id, and the Firebase session is signed out afterwards. Apps that never used Firebase leave the package out.
+The exchange happens once, the server keeps the Firebase uid as the user id, and the keychain item is removed afterwards. Apps that never used Firebase leave the package out.
 
 ### Custom providers
 
@@ -225,7 +225,7 @@ API reference for every module: the DocC catalog in each module under [`Sources/
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "11.0.0")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "12.0.0")
 ]
 ```
 

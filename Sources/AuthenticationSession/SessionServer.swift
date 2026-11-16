@@ -21,6 +21,13 @@ public enum SessionServerError: Error, Equatable, Sendable {
     /// Whether the server said the account was deleted (410 `account_deleted`).
     var isAccountDeleted: Bool { status == 410 }
 
+    /// Whether the server said a legacy credential can never be exchanged: Google refused the
+    /// Firebase refresh token for good (401 `legacy_credential_rejected` — the token was
+    /// revoked or expired, the user disabled or deleted). Retrying cannot succeed.
+    public var isLegacyCredentialRejected: Bool {
+        self == .rejected(status: 401, reason: "legacy_credential_rejected")
+    }
+
 }
 
 /// A credential that cannot be sent to the session server.
@@ -81,8 +88,15 @@ struct SessionServer: Sendable {
         return try await session(from: post(path, body: body, bearer: bearer))
     }
 
-    func exchangeLegacy(idToken: String, installID: String) async throws -> AuthSession {
-        try await session(from: post("v1/auth/firebase", body: ["idToken": idToken, "installId": installID]))
+    func exchangeLegacy(_ credential: LegacyCredential, installID: String) async throws -> AuthSession {
+        let body: [String: String]
+        switch credential {
+        case .firebaseIDToken(let idToken):
+            body = ["idToken": idToken, "installId": installID]
+        case .firebaseRefreshToken(let refreshToken):
+            body = ["refreshToken": refreshToken, "installId": installID]
+        }
+        return try await session(from: post("v1/auth/firebase", body: body))
     }
 
     /// Removes a provider from the account `bearer` belongs to, and returns the account as it

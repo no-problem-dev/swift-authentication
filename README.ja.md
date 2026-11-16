@@ -123,8 +123,8 @@ struct MainView: View {
 `establishSession()` が、端末が誰としてサインインするかを決める。
 
 1. 保存済みのセッションがあれば、それを使う。アクセストークンの期限が5分を切っていれば先に再取得する。再取得がサーバーに届かなくても、保存済みのセッションを使う
-2. 無ければ、`LegacySessionSource` が前のバージョンのセッションを持っているとき、`/v1/auth/firebase` で交換する。ユーザーの ID は変わらない。**交換に失敗しても匿名のセッションは作らない**（作ると、その人の記録から外れる）。エラーを投げるので、通信が戻ったときにもう一度呼ぶ
-3. どちらも無ければ、`/v1/auth/anonymous` で新しい匿名のセッションを作る
+2. 無ければ、`LegacySessionSource` が前のバージョンのセッションを持っているとき、`/v1/auth/firebase` で交換する（持っている物に合わせて `{ idToken }` か `{ refreshToken }`）。ユーザーの ID は変わらない。**届かない・503 など、やり直せば通るかもしれない失敗では、セッションを作らない**（作ると、その人の記録から外れる）。エラーを投げるので、あとでもう一度呼ぶ。サーバーが「二度と替えられない」と答えたとき（410 `account_deleted`、または Google がリフレッシュトークンを断った 401 `legacy_credential_rejected`）は、前のセッションを消して 3 に進む
+3. どちらも無ければ、`/v1/auth/anonymous` で新しい匿名のセッションを作る。`SessionAuthenticator(…, anonymous: .disabled)`（サインインが任意のアプリ）では作らず、`AuthError.notAuthenticated` を投げる。Apple・Google でサインインするまでサインアウトのまま
 
 `store.signIn(with: .anonymous)` も同じ手順を通る。同時に呼ばれたときは1回の試みを分け合う。
 
@@ -194,11 +194,11 @@ SessionAuthenticator(
 )
 ```
 
-キーチェーンの項目はアプリを消しても残るので、同じ端末で入れ直すと同じユーザーに戻る。テストとプレビューは `InMemorySessionStore` を使う。
+キーチェーンの項目はアプリを消しても残るので、同じ端末で入れ直すと同じユーザーに戻る。セッションとして読めない項目は勝手に消さず `KeychainSessionStore.UndecodableItem` を投げる（`signOut()` で消える）。テストとプレビューは `InMemorySessionStore` を使う。
 
 ### Firebase Authentication から移す
 
-[swift-authentication-firebase](https://github.com/no-problem-dev/swift-authentication-firebase) を足し、`FirebaseLegacySessionSource` を渡す。
+[swift-authentication-firebase](https://github.com/no-problem-dev/swift-authentication-firebase) を足し、`FirebaseKeychainLegacySessionSource` を渡す。Firebase Authentication がキーチェーンに残したリフレッシュトークンを Firebase の SDK なしで読み、サーバーが Google で替える。
 
 ```swift
 import AuthenticationFirebase
@@ -206,11 +206,11 @@ import AuthenticationFirebase
 SessionAuthenticator(
     baseURL: apiURL,
     installID: { InstallID.current },
-    legacySource: FirebaseLegacySessionSource()
+    legacySource: FirebaseKeychainLegacySessionSource(googleAppID: "1:1234567890:ios:abcdef")
 )
 ```
 
-Firebase の ID トークンを1回だけ交換し、サーバーは Firebase の uid をそのままユーザー ID にする。交換の後は Firebase のセッションからサインアウトする。Firebase を使ったことのないアプリは、このパッケージを入れない。
+交換は1回だけで、サーバーは Firebase の uid をそのままユーザー ID にする。交換の後はキーチェーンの項目を消す。Firebase を使ったことのないアプリは、このパッケージを入れない。
 
 ### 独自プロバイダ
 
@@ -224,7 +224,7 @@ Firebase の ID トークンを1回だけ交換し、サーバーは Firebase �
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "11.0.0")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "12.0.0")
 ]
 ```
 

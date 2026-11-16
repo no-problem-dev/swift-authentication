@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [12.0.0] - 2026-11-16
+
+Moving off Firebase no longer needs the Firebase SDK on the device: the legacy source can hand
+over the refresh token Firebase left in the keychain, and the server trades it at Google.
+
+### Changed
+
+- **Breaking:** `LegacySessionSource` returns a `LegacyCredential` —
+  `.firebaseIDToken(String)` or `.firebaseRefreshToken(String)` — from `legacyCredential()`, in
+  place of `legacyIDToken()`, and forgets it with `discard()`, in place of
+  `discardLegacySession()`. The exchange at `/v1/auth/firebase` sends `{ idToken, installId }` or
+  `{ refreshToken, installId }` accordingly.
+- A legacy exchange the server says can never succeed — 401 `legacy_credential_rejected`,
+  Google refused the refresh token for good — discards the legacy session and goes on as a new
+  device would, as a 410 `account_deleted` already did. Before, it threw on every launch forever.
+  Only failures that may pass (no network, 503, a locked keychain) throw and are retried.
+- **Breaking:** `KeychainSessionStore.load()` throws `KeychainSessionStore.UndecodableItem` for an
+  item that is not a session, instead of deleting it and reporting no session. `signOut()`
+  removes such an item.
+
+### Added
+
+- `SessionAuthenticator(…, anonymous: .disabled)` (`AnonymousSessions`): uses the stored session
+  and the legacy exchange only, and never opens an anonymous one. With nobody to sign in as,
+  `establishSession()` and `signIn(with: .anonymous)` throw `AuthError.notAuthenticated` and the
+  device stays signed out.
+- `SessionServerError.isLegacyCredentialRejected`.
+
 ## [11.1.0] - 2026-11-16
 
 ### Added

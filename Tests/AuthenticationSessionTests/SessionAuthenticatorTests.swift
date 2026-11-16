@@ -3,16 +3,20 @@ import Foundation
 import Authentication
 @testable import AuthenticationSession
 
-/// A legacy session the test controls: it hands out a token, can fail, and records discards.
+/// A legacy session the test controls: it hands out a credential, can fail, and records discards.
 final class FakeLegacySource: LegacySessionSource, @unchecked Sendable {
     private let lock = NSLock()
-    private var token: String?
+    private var credential: LegacyCredential?
     private var failure: (any Error)?
     private var discards = 0
 
     init(token: String?, failure: (any Error)? = nil) {
-        self.token = token
+        self.credential = token.map(LegacyCredential.firebaseIDToken)
         self.failure = failure
+    }
+
+    init(refreshToken: String) {
+        self.credential = .firebaseRefreshToken(refreshToken)
     }
 
     var discardCount: Int { lock.withLock { discards } }
@@ -21,17 +25,17 @@ final class FakeLegacySource: LegacySessionSource, @unchecked Sendable {
         lock.withLock { self.failure = failure }
     }
 
-    func legacyIDToken() async throws -> String? {
+    func legacyCredential() async throws -> LegacyCredential? {
         try lock.withLock {
             if let failure { throw failure }
-            return token
+            return credential
         }
     }
 
-    func discardLegacySession() async throws {
+    func discard() async throws {
         lock.withLock {
             discards += 1
-            token = nil
+            credential = nil
         }
     }
 }
@@ -44,13 +48,15 @@ struct SessionAuthenticatorTests {
     private func make(
         _ worker: FakeWorker,
         store: InMemorySessionStore = InMemorySessionStore(),
-        legacySource: (any LegacySessionSource)? = nil
+        legacySource: (any LegacySessionSource)? = nil,
+        anonymous: AnonymousSessions = .enabled
     ) -> SessionAuthenticator {
         SessionAuthenticator(
             baseURL: worker.baseURL,
             installID: { "install-1" },
             store: store,
             legacySource: legacySource,
+            anonymous: anonymous,
             accountDeletionPath: "v1/account",
             urlSession: worker.urlSession
         )
@@ -441,6 +447,98 @@ struct SessionAuthenticatorTests {
             _ = try await authenticator.signIn(with: .anonymous)
         } throws: { ($0 as? AuthError)?.code == .sessionExchangeFailed }
         #expect(worker.paths.isEmpty)
+    }
+
+    @Test("a Firebase refresh token is sent as { refreshToken } and exchanged into the same user id")
+    func refreshTokenIsExchanged() async throws {
+        let worker = FakeWorker()
+        let legacy = FakeLegacySource(refreshToken: "firebase-refresh-legacy-uid")
+        let authenticator = make(worker, legacySource: legacy)
+
+        let user = try await authenticator.establishSession()
+
+        #expect(user.id == "legacy-uid")
+        #expect(worker.recorded.first?.body == ["refreshToken": "firebase-refresh-legacy-uid", "installId": "install-1"])
+        #expect(legacy.discardCount == 1)
+    }
+
+    @Test("a refresh token Google refused for good is discarded and the device starts anew")
+    func rejectedRefreshTokenIsDiscarded() async throws {
+        let worker = FakeWorker()
+        worker.update { $0.rejectedFirebaseRefreshTokens = ["firebase-refresh-legacy-uid"] }
+        let legacy = FakeLegacySource(refreshToken: "firebase-refresh-legacy-uid")
+        let authenticator = make(worker, legacySource: legacy)
+
+        let user = try await authenticator.establishSession()
+
+        #expect(user.id != "legacy-uid")
+        #expect(worker.paths == ["POST /v1/auth/firebase", "POST /v1/auth/anonymous"])
+        #expect(legacy.discardCount == 1)
+    }
+
+    @Test("a 503 while Google is unreachable keeps the refresh token and opens nothing")
+    func unavailableFirebaseKeepsTheToken() async throws {
+        let worker = FakeWorker()
+        worker.update { $0.firebaseUnavailable = true }
+        let legacy = FakeLegacySource(refreshToken: "firebase-refresh-legacy-uid")
+        let store = InMemorySessionStore()
+        let authenticator = make(worker, store: store, legacySource: legacy)
+
+        await #expect {
+            _ = try await authenticator.establishSession()
+        } throws: { ($0 as? AuthError)?.code == .sessionExchangeFailed }
+        #expect(worker.paths == ["POST /v1/auth/firebase"])
+        #expect(legacy.discardCount == 0)
+        #expect(try store.load() == nil)
+
+        worker.update { $0.firebaseUnavailable = false }
+        #expect(try await authenticator.establishSession().id == "legacy-uid")
+    }
+
+    // MARK: - Without anonymous sessions
+
+    @Test("with anonymous sessions disabled, a device with nobody to sign in as stays signed out")
+    func disabledAnonymousStaysSignedOut() async throws {
+        let worker = FakeWorker()
+        let store = InMemorySessionStore()
+        let authenticator = make(worker, store: store, anonymous: .disabled)
+
+        await #expect {
+            _ = try await authenticator.establishSession()
+        } throws: { ($0 as? AuthError)?.code == .notAuthenticated }
+        await #expect {
+            _ = try await authenticator.signIn(with: .anonymous)
+        } throws: { ($0 as? AuthError)?.code == .notAuthenticated }
+        #expect(worker.paths.isEmpty)
+        #expect(try store.load() == nil)
+        #expect(await authenticator.currentUser() == nil)
+
+        let user = try await authenticator.signIn(with: apple)
+        #expect(user.providerIDs == [.apple])
+    }
+
+    @Test("with anonymous sessions disabled, a legacy session is still exchanged")
+    func disabledAnonymousStillExchanges() async throws {
+        let worker = FakeWorker()
+        let legacy = FakeLegacySource(refreshToken: "firebase-refresh-legacy-uid")
+        let authenticator = make(worker, legacySource: legacy, anonymous: .disabled)
+
+        #expect(try await authenticator.establishSession().id == "legacy-uid")
+        #expect(worker.paths == ["POST /v1/auth/firebase"])
+    }
+
+    @Test("with anonymous sessions disabled, a rejected legacy session leaves the device signed out")
+    func disabledAnonymousAfterRejection() async throws {
+        let worker = FakeWorker()
+        worker.update { $0.rejectedFirebaseRefreshTokens = ["firebase-refresh-legacy-uid"] }
+        let legacy = FakeLegacySource(refreshToken: "firebase-refresh-legacy-uid")
+        let authenticator = make(worker, legacySource: legacy, anonymous: .disabled)
+
+        await #expect {
+            _ = try await authenticator.establishSession()
+        } throws: { ($0 as? AuthError)?.code == .notAuthenticated }
+        #expect(worker.paths == ["POST /v1/auth/firebase"])
+        #expect(legacy.discardCount == 1)
     }
 
     // MARK: - Sign-out and deletion
