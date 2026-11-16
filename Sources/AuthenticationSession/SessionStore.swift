@@ -9,9 +9,10 @@ import Foundation
 public protocol SessionStore: Sendable {
     /// Returns the stored session, or `nil` when there is none.
     ///
-    /// - Throws: When the storage could not be read — the keychain before the first unlock,
-    ///   say. That is not the same as having no session, and the authenticator does not start
-    ///   a new one over it.
+    /// - Throws: When the storage could not be read — ``ProtectedDataUnavailable`` for the
+    ///   keychain before the first unlock or while locked, say. That is not the same as having
+    ///   no session, and the authenticator does not start a new one over it. A store must not
+    ///   return `nil` while it cannot tell whether a session is there.
     func load() throws -> AuthSession?
 
     /// Replaces the stored session.

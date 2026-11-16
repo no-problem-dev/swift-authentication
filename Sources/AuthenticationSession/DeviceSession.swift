@@ -102,6 +102,9 @@ actor DeviceSession {
                 // The person deleted that account, or Google will never accept the credential
                 // again. Retrying cannot help: forget it and start the way a new device does.
                 try? await legacySource.discard()
+            } catch let error as ProtectedDataUnavailable {
+                // The legacy session may well be there: the device is locked. Wait for it.
+                throw error
             } catch {
                 // Never start over here: it would strand the person's records under the legacy
                 // user id. The next attempt — a later launch, the network back — tries again.

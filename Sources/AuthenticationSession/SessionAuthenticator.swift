@@ -93,8 +93,13 @@ public final class SessionAuthenticator: Authenticator {
     ///
     /// Concurrent calls share one attempt, so two callers at launch never open two accounts.
     ///
-    /// - Throws: ``AuthError/sessionExchangeFailed(_:)`` when step 2 failed in a way that may
-    ///   pass — no network, a 503 from the server, a keychain that is still locked. No session
+    /// - Throws: ``ProtectedDataUnavailable`` when the stored session or the legacy session
+    ///   could not be read because the device's protected data is not available — a prewarmed
+    ///   or background launch before the first unlock, or while locked. Nothing is opened or
+    ///   exchanged; call this again after `UIApplication.protectedDataDidBecomeAvailableNotification`
+    ///   or when the scene becomes active.
+    ///   ``AuthError/sessionExchangeFailed(_:)`` when step 2 failed in a way that may
+    ///   pass — no network, a 503 from the server. No session
     ///   is opened in its place — that would strand the person's records — so call this again
     ///   later. ``AuthError/notAuthenticated`` when anonymous sessions are disabled and there
     ///   was nobody to sign in as. ``SessionServerError`` when step 3 fails, and

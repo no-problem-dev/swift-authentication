@@ -197,6 +197,16 @@ SessionAuthenticator(
 
 Keychain items survive deleting the app, so a reinstall on the same device comes back as the same user. An item that is not a session is reported as `KeychainSessionStore.UndecodableItem`, not removed behind the caller's back; `signOut()` removes it. Tests and previews use `InMemorySessionStore`.
 
+While the device's protected data is unavailable — a prewarmed or background launch before the first unlock, or while locked — the keychain cannot be read and can even answer "not found" for an item that is there. `KeychainSessionStore` checks `ProtectedDataAvailability` (by default `KeychainProtectedDataProbe`, which needs no UIKit) before it reports no session, and `establishSession()` throws `ProtectedDataUnavailable` instead of opening a new account. Call it again after `UIApplication.protectedDataDidBecomeAvailableNotification`:
+
+```swift
+do {
+    try await authenticator.establishSession()
+} catch is ProtectedDataUnavailable {
+    // Not signed out: the keychain is locked. Try again once it is not.
+}
+```
+
 ### Moving off Firebase Authentication
 
 Add [swift-authentication-firebase](https://github.com/no-problem-dev/swift-authentication-firebase) and pass its `FirebaseKeychainLegacySessionSource`. It reads the refresh token Firebase Authentication left in the keychain — without the Firebase SDK — and the server trades it at Google:
@@ -225,7 +235,7 @@ API reference for every module: the DocC catalog in each module under [`Sources/
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "12.0.0")
+    .package(url: "https://github.com/no-problem-dev/swift-authentication.git", from: "12.1.0")
 ]
 ```
 
