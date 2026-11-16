@@ -17,6 +17,10 @@ public enum SessionServerError: Error, Equatable, Sendable {
         if case .rejected(let status, _) = self { return status }
         return nil
     }
+
+    /// Whether the server said the account was deleted (410 `account_deleted`).
+    var isAccountDeleted: Bool { status == 410 }
+
 }
 
 /// A credential that cannot be sent to the session server.
@@ -43,8 +47,22 @@ struct SessionServer: Sendable {
         try await session(from: post("v1/auth/refresh", body: ["refreshToken": refreshToken]))
     }
 
+    /// How `/v1/auth/apple` and `/v1/auth/google` treat a token nobody has used yet.
+    enum ExchangeMode: String {
+        /// Link it to the account `bearer` belongs to, or sign in — creating the account — without one.
+        case linkOrSignIn = "link_or_sign_in"
+        /// Sign in to the account it belongs to; 404 `account_not_found` when there is none, and
+        /// nothing is created or linked.
+        case signInExisting = "sign_in_existing"
+    }
+
     /// Signs in with a provider's token, or links it to the account `bearer` belongs to.
-    func exchange(_ credential: AuthCredential, installID: String, bearer: String?) async throws -> AuthSession {
+    func exchange(
+        _ credential: AuthCredential,
+        mode: ExchangeMode,
+        installID: String,
+        bearer: String?
+    ) async throws -> AuthSession {
         guard let idToken = credential.idToken else {
             throw SessionCredentialError.invalidCredential(credential.provider)
         }
@@ -53,10 +71,10 @@ struct SessionServer: Sendable {
         switch credential.provider {
         case .apple:
             path = "v1/auth/apple"
-            body = ["identityToken": idToken, "installId": installID]
+            body = ["identityToken": idToken, "installId": installID, "mode": mode.rawValue]
         case .google:
             path = "v1/auth/google"
-            body = ["idToken": idToken, "installId": installID]
+            body = ["idToken": idToken, "installId": installID, "mode": mode.rawValue]
         default:
             throw SessionCredentialError.invalidCredential(credential.provider)
         }
@@ -65,6 +83,17 @@ struct SessionServer: Sendable {
 
     func exchangeLegacy(idToken: String, installID: String) async throws -> AuthSession {
         try await session(from: post("v1/auth/firebase", body: ["idToken": idToken, "installId": installID]))
+    }
+
+    /// Removes a provider from the account `bearer` belongs to, and returns the account as it
+    /// is afterwards.
+    func unlink(_ provider: AuthProviderID, bearer: String) async throws -> AuthSession.User {
+        let data = try await send("DELETE", "v1/auth/identities/\(provider.rawValue)", body: [:], bearer: bearer)
+        do {
+            return try JSONDecoder().decode(AuthSession.User.self, from: data)
+        } catch {
+            throw SessionServerError.malformedResponse
+        }
     }
 
     func signOut(bearer: String) async throws {

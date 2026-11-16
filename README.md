@@ -54,8 +54,7 @@ struct MyApp: App {
     init() {
         authenticator = SessionAuthenticator(
             baseURL: URL(string: "https://api.example.com")!,   // A domain you own, not workers.dev.
-            installID: { InstallID.current },                   // A UUID the app keeps in UserDefaults.
-            accountDeletionPath: "v1/account"
+            installID: { InstallID.current }                    // A UUID the app keeps in UserDefaults.
         )
         _store = State(initialValue: AuthenticationStore(
             authenticator: authenticator,
@@ -147,7 +146,22 @@ do {
 }
 ```
 
-The collision carries the credential that collided. The server verifies the token by its signature, so `signIn(resolving:)` signs in to the owning account with the same token without showing Apple's sheet again. When the token has expired in the meantime, the store runs the provider's sheet for a fresh one.
+The collision carries the credential that collided. The server verifies the token by its signature, so `signIn(resolving:)` signs in to the owning account with the same token without showing Apple's sheet again. When the token has expired in the meantime, the store runs the provider's sheet for a fresh one. Switching to another user revokes the previous session's device on the server.
+
+`unlink(_:)` removes a provider again (`DELETE /v1/auth/identities/:provider`) and keeps the user id.
+
+### Signing in to an existing account
+
+For a "sign in to my existing account" screen, `signInExisting` sends `mode: "sign_in_existing"`: it signs in to the account the credential belongs to, and when there is none it creates nothing, links nothing and leaves the session alone.
+
+```swift
+let found = try await store.signInExisting(using: .apple)
+if !found { /* No account uses this Apple ID yet. */ }
+```
+
+### Deleted accounts
+
+The server answers 410 `account_deleted` for a deleted account; it arrives as `AuthError.accountDeleted`. A legacy session that belonged to a deleted account is forgotten and a new anonymous session opened in its place.
 
 ### Signing out
 
@@ -155,7 +169,7 @@ The collision carries the credential that collided. The server verifies the toke
 
 ### Deleting the account
 
-`store.deleteAccount()` sends `DELETE <accountDeletionPath>` with the bearer token, then clears the session once the server succeeded. For an account linked to Apple, it first runs Apple's sheet for a fresh authorization code and sends it as `{ "appleAuthorizationCode": … }`, so the server can revoke the person's Apple tokens as App Review guideline 5.1.1(v) requires. The code is single use and lasts about five minutes, which is why it is obtained at deletion time. Backing out of the sheet deletes nothing and throws `AuthError.cancelled`.
+`store.deleteAccount()` sends `DELETE /v1/account` (change it with `accountDeletionPath:`) with the bearer token, then clears the session once the server succeeded. For an account linked to Apple, it first runs Apple's sheet for a fresh authorization code and sends it as `{ "appleAuthorizationCode": … }`, so the server can revoke the person's Apple tokens as App Review guideline 5.1.1(v) requires. The code is single use and lasts about five minutes, which is why it is obtained at deletion time. Backing out of the sheet deletes nothing and throws `AuthError.cancelled`.
 
 ### Sharing the session with an extension
 

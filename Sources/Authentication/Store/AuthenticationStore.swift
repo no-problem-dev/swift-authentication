@@ -128,6 +128,48 @@ public final class AuthenticationStore {
         }
     }
 
+    /// Removes a provider from the signed-in account, keeping its user id.
+    ///
+    /// Like ``link(with:)``, a success republishes the user and a failure leaves ``state``
+    /// alone.
+    ///
+    /// - Throws: Whatever ``Authenticator/unlink(_:)`` threw.
+    public func unlink(_ provider: AuthProviderID) async throws {
+        let unlinked = try await authenticator.unlink(provider)
+        if case .authenticated(let current) = state, current.id == unlinked.id {
+            state = .authenticated(unlinked)
+        }
+    }
+
+    // MARK: - Sign in to an existing account
+
+    /// Runs a registered provider's sign-in UI and signs in to the account the credential
+    /// already belongs to — without creating one or linking anything when there is none.
+    ///
+    /// For a "sign in to my existing account" screen. ``state`` follows through the
+    /// authenticator's stream when the account changes.
+    ///
+    /// - Parameter providerID: Which registered provider to use.
+    /// - Returns: `true` when an existing account was found and is now signed in, `false` when
+    ///   the credential belongs to no account; the current session is then untouched.
+    /// - Throws: ``AuthError/unsupportedProvider(_:)``, ``AuthError/cancelled`` and
+    ///   ``AuthError/credentialAcquisitionFailed(_:)`` as for ``signIn(using:)``.
+    ///   ``AuthError/accountExistsWithDifferentProvider(provider:email:)`` and
+    ///   ``AuthError/accountDeleted`` unchanged, ``AuthError/sessionExchangeFailed(_:)`` for
+    ///   anything else.
+    @discardableResult
+    public func signInExisting(using providerID: AuthProviderID) async throws -> Bool {
+        guard let provider = credentialProviders[providerID] else {
+            throw AuthError.unsupportedProvider(providerID)
+        }
+        let credential = try await acquireCredential(from: provider)
+        do {
+            return try await authenticator.signInExisting(with: credential) != nil
+        } catch {
+            throw Self.exchangeFailure(error)
+        }
+    }
+
     /// Signs in to the account that owns a credential which failed to link.
     ///
     /// Hands the collided credential to the authenticator first, which signs in with it when
@@ -168,7 +210,10 @@ public final class AuthenticationStore {
 
     /// Wraps a failed exchange, except a refusal the person can act on, which keeps its name.
     private static func exchangeFailure(_ error: any Error) -> AuthError {
-        if let authError = error as? AuthError, authError.code == .accountExistsWithDifferentProvider { return authError }
+        if let authError = error as? AuthError,
+           authError.code == .accountExistsWithDifferentProvider || authError.code == .accountDeleted {
+            return authError
+        }
         return .sessionExchangeFailed(error)
     }
 

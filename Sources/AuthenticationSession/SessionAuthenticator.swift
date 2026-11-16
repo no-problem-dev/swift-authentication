@@ -15,15 +15,14 @@ import Authentication
 /// ```swift
 /// let authenticator = SessionAuthenticator(
 ///     baseURL: URL(string: "https://api.example.com")!,
-///     installID: { InstallID.current },   // A UUID the app keeps in UserDefaults.
-///     accountDeletionPath: "v1/account"
+///     installID: { InstallID.current }   // A UUID the app keeps in UserDefaults.
 /// )
 /// let store = AuthenticationStore(authenticator: authenticator, credentialProviders: [AppleCredentialProvider()])
 /// let apiToken = authenticator.tokenProvider.tokenSource
 /// ```
 public final class SessionAuthenticator: Authenticator {
     let deviceSession: DeviceSession
-    private let accountDeletionPath: String?
+    private let accountDeletionPath: String
 
     /// Creates an authenticator.
     ///
@@ -36,8 +35,7 @@ public final class SessionAuthenticator: Authenticator {
     ///   - legacySource: The session an earlier version of the app left on the device, for apps
     ///     moving off another authentication service. `nil` for an app that never had one.
     ///   - accountDeletionPath: The app's endpoint, relative to `baseURL`, that deletes the
-    ///     signed-in account and everything it owns. `nil` makes ``deleteAccount(appleAuthorizationCode:)``
-    ///     a configuration error.
+    ///     signed-in account and everything it owns.
     ///   - urlSession: The session requests go through.
     ///   - requestTimeout: How long one request may take, in seconds. Long by default, for slow
     ///     and unstable connections.
@@ -46,7 +44,7 @@ public final class SessionAuthenticator: Authenticator {
         installID: @escaping @Sendable () -> String,
         store: any SessionStore = KeychainSessionStore(),
         legacySource: (any LegacySessionSource)? = nil,
-        accountDeletionPath: String? = nil,
+        accountDeletionPath: String = "v1/account",
         urlSession: URLSession = .shared,
         requestTimeout: TimeInterval = 20
     ) {
@@ -101,12 +99,28 @@ public final class SessionAuthenticator: Authenticator {
     /// keep the current user id.
     ///
     /// - Throws: ``SessionCredentialError/invalidCredential(_:)`` for a credential without an
-    ///   ID token, ``SessionServerError`` when the server refused or could not be reached.
+    ///   ID token, ``AuthError/accountDeleted`` for a credential of a deleted account, and
+    ///   ``SessionServerError`` when the server refused otherwise or could not be reached.
     public func signIn(with credential: AuthCredential) async throws -> AuthUser {
         if credential.provider == .anonymous {
             return try await establishSession()
         }
-        return try await deviceSession.signIn(with: credential).user.authUser
+        return try await Self.namingDeletion {
+            try await deviceSession.signIn(with: credential).user.authUser
+        }
+    }
+
+    /// Signs in to the account an Apple or Google credential already belongs to, sending
+    /// `mode: "sign_in_existing"`. When it belongs to none the server creates nothing, links
+    /// nothing, and this returns `nil` with the current session untouched.
+    ///
+    /// Switching to another user revokes the previous session's device on the server.
+    ///
+    /// - Throws: As for ``signIn(with:)``.
+    public func signInExisting(with credential: AuthCredential) async throws -> AuthUser? {
+        try await Self.namingDeletion {
+            try await deviceSession.signInExisting(with: credential)?.user.authUser
+        }
     }
 
     /// Links an Apple or Google credential to the signed-in account, keeping its user id.
@@ -118,8 +132,10 @@ public final class SessionAuthenticator: Authenticator {
     public func link(with credential: AuthCredential) async throws -> AuthUser {
         do {
             return try await deviceSession.link(credential).user.authUser
-        } catch AuthError.notAuthenticated {
-            throw AuthError.notAuthenticated
+        } catch let error as AuthError {
+            throw error
+        } catch let error as SessionServerError where error.isAccountDeleted {
+            throw AuthError.accountDeleted
         } catch let error as SessionServerError where error.status == 409 {
             throw AuthError.credentialAlreadyInUse(CredentialCollision(credential: credential))
         } catch {
@@ -127,18 +143,34 @@ public final class SessionAuthenticator: Authenticator {
         }
     }
 
+    /// Removes Apple or Google from the signed-in account at `DELETE /v1/auth/identities/:provider`,
+    /// keeping the user id and the tokens.
+    ///
+    /// - Throws: ``AuthError/notAuthenticated`` when nobody is signed in, and
+    ///   ``SessionServerError`` otherwise — a 404 `identity_not_linked` when the provider was not
+    ///   linked.
+    public func unlink(_ provider: AuthProviderID) async throws -> AuthUser {
+        try await Self.namingDeletion {
+            try await deviceSession.unlink(provider).user.authUser
+        }
+    }
+
     /// Signs in to the account that owns a credential which failed to link, with the same
-    /// credential. The server verifies the token by its signature, so a second use is accepted.
+    /// credential and `mode: "sign_in_existing"`. The server verifies the token by its
+    /// signature, so a second use is accepted. The previous session's device is revoked.
     ///
     /// - Throws: ``AuthError/credentialAlreadyInUse(_:)`` unchanged when the server no longer
-    ///   accepts the token (401) — it expired while the person decided — so the caller acquires
-    ///   a fresh one. Otherwise as for ``signIn(with:)``.
+    ///   accepts the token (401) — it expired while the person decided — or no account owns it
+    ///   any more, so the caller acquires a fresh one. Otherwise as for ``signIn(with:)``.
     public func signIn(resolving collision: CredentialCollision) async throws -> AuthUser {
+        let owner: AuthUser?
         do {
-            return try await deviceSession.signIn(with: collision.credential).user.authUser
+            owner = try await signInExisting(with: collision.credential)
         } catch let error as SessionServerError where error.status == 401 {
             throw AuthError.credentialAlreadyInUse(collision)
         }
+        guard let owner else { throw AuthError.credentialAlreadyInUse(collision) }
+        return owner
     }
 
     /// Forgets the session on the device, then asks the server to revoke it.
@@ -158,13 +190,9 @@ public final class SessionAuthenticator: Authenticator {
     /// `{ "appleAuthorizationCode": … }` (the key is left out when there is no code). The session
     /// is cleared only after the server succeeded, so a failure can be retried.
     ///
-    /// - Throws: ``AuthError/configuration(_:)`` when no `accountDeletionPath` was given,
-    ///   ``AuthError/notAuthenticated`` when nobody is signed in, and ``SessionServerError``
-    ///   when the server refused or could not be reached.
+    /// - Throws: ``AuthError/notAuthenticated`` when nobody is signed in, and
+    ///   ``SessionServerError`` when the server refused or could not be reached.
     public func deleteAccount(appleAuthorizationCode: String?) async throws {
-        guard let accountDeletionPath else {
-            throw AuthError.configuration("SessionAuthenticator has no accountDeletionPath")
-        }
         try await deviceSession.deleteAccount(path: accountDeletionPath, appleAuthorizationCode: appleAuthorizationCode)
     }
 
@@ -180,6 +208,15 @@ public final class SessionAuthenticator: Authenticator {
                 Task { await deviceSession.stopObserving(id) }
             }
             Task { await deviceSession.observe(id, continuation) }
+        }
+    }
+
+    /// Reports the server's 410 `account_deleted` as ``AuthError/accountDeleted``.
+    private static func namingDeletion<T: Sendable>(_ body: () async throws -> T) async throws -> T {
+        do {
+            return try await body()
+        } catch let error as SessionServerError where error.isAccountDeleted {
+            throw AuthError.accountDeleted
         }
     }
 }

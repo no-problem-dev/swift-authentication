@@ -59,8 +59,8 @@ actor DeviceSession {
         if !forceRefresh, remaining > Self.refreshMargin { return session }
         do {
             return try await refreshed()
-        } catch AuthError.notAuthenticated {
-            throw AuthError.notAuthenticated
+        } catch let error as AuthError {
+            throw error
         } catch {
             guard !forceRefresh, remaining > 0 else { throw error }
             return session
@@ -83,7 +83,7 @@ actor DeviceSession {
         if let stored = try current() {
             do {
                 if let valid = try await validSession(forceRefresh: false) { return valid }
-            } catch AuthError.notAuthenticated {
+            } catch let error as AuthError where error.code == .notAuthenticated || error.code == .accountDeleted {
                 // The server revoked the stored session; it is gone now. Start over below.
             } catch {
                 // Unreachable: keep using what is stored, and refresh when a request needs it.
@@ -95,6 +95,10 @@ actor DeviceSession {
             let exchanged: AuthSession?
             do {
                 exchanged = try await exchangeLegacySession(from: legacySource)
+            } catch let error as SessionServerError where error.isAccountDeleted {
+                // The person deleted that account. Nothing is left to keep, so start anew.
+                try? await legacySource.discardLegacySession()
+                exchanged = nil
             } catch {
                 // Never fall back to a new anonymous user here: it would strand the person's
                 // records under the legacy user id. The next attempt tries again.
@@ -118,8 +122,50 @@ actor DeviceSession {
 
     // MARK: - Changing
 
+    /// Signs in with a provider's credential, replacing the current session.
     func signIn(with credential: AuthCredential) async throws -> AuthSession {
-        let session = try await server.exchange(credential, installID: installID(), bearer: nil)
+        let session = try await server.exchange(credential, mode: .linkOrSignIn, installID: installID(), bearer: nil)
+        try await switchTo(session)
+        return session
+    }
+
+    /// Signs in to the account a credential belongs to, or returns `nil` — touching nothing —
+    /// when it belongs to none.
+    func signInExisting(with credential: AuthCredential) async throws -> AuthSession? {
+        let session: AuthSession
+        do {
+            session = try await server.exchange(credential, mode: .signInExisting, installID: installID(), bearer: nil)
+        } catch let error as SessionServerError where error.status == 404 {
+            return nil
+        }
+        try await switchTo(session)
+        return session
+    }
+
+    /// Replaces the session, and when that changed the user, revokes the previous one's device
+    /// on the server. Best effort: the switch has already happened either way.
+    private func switchTo(_ session: AuthSession) async throws {
+        let previous = try current()
+        try replace(with: session)
+        if let previous, previous.user.id != session.user.id {
+            try? await server.signOut(bearer: previous.accessToken)
+        }
+    }
+
+    /// Removes a provider from the signed-in account; the tokens stay as they are.
+    func unlink(_ provider: AuthProviderID) async throws -> AuthSession {
+        guard let valid = try await validSession(forceRefresh: false) else {
+            throw AuthError.notAuthenticated
+        }
+        let startedAt = generation
+        let user = try await server.unlink(provider, bearer: valid.accessToken)
+        guard generation == startedAt, let latest = try current() else { throw AuthError.notAuthenticated }
+        let session = AuthSession(
+            user: user,
+            accessToken: latest.accessToken,
+            accessTokenExpiresAt: latest.accessTokenExpiresAt,
+            refreshToken: latest.refreshToken
+        )
         try replace(with: session)
         return session
     }
@@ -133,7 +179,7 @@ actor DeviceSession {
             throw AuthError.notAuthenticated
         }
         let startedAt = generation
-        let session = try await server.exchange(credential, installID: installID(), bearer: valid.accessToken)
+        let session = try await server.exchange(credential, mode: .linkOrSignIn, installID: installID(), bearer: valid.accessToken)
         guard generation == startedAt else { throw AuthError.notAuthenticated }
         try replace(with: session)
         return session
@@ -178,9 +224,9 @@ actor DeviceSession {
         let fresh: AuthSession
         do {
             fresh = try await server.refresh(refreshToken: session.refreshToken)
-        } catch let error as SessionServerError where error.status == 401 {
+        } catch let error as SessionServerError where error.status == 401 || error.isAccountDeleted {
             if generation == startedAt { try replace(with: nil) }
-            throw AuthError.notAuthenticated
+            throw error.isAccountDeleted ? AuthError.accountDeleted : AuthError.notAuthenticated
         }
         guard generation == startedAt else {
             // Signed out or switched accounts while the refresh was in flight: that wins.

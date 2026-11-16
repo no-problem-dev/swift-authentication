@@ -39,6 +39,14 @@ final class PreviewStubAuthenticator: Authenticator, @unchecked Sendable {
         initial ?? AuthUser(id: "preview-user")
     }
 
+    func unlink(_ provider: AuthProviderID) async throws -> AuthUser {
+        initial ?? AuthUser(id: "preview-user")
+    }
+
+    func signInExisting(with credential: AuthCredential) async throws -> AuthUser? {
+        initial
+    }
+
     func signIn(resolving collision: CredentialCollision) async throws -> AuthUser {
         initial ?? AuthUser(id: "preview-user")
     }

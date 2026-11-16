@@ -29,6 +29,7 @@ final class FakeWorker: @unchecked Sendable {
     var refreshDelay: TimeInterval = 0
     var revokedRefreshTokens: Set<String> = []
     var failLegacyExchange = false
+    var deletedUserIDs: Set<String> = []
     var unreachablePaths: Set<String> = []
 
     init() {
@@ -92,12 +93,15 @@ final class FakeWorker: @unchecked Sendable {
                     return Self.error(400, "bad_request")
                 }
                 let subject = "\(provider):\(token)"
+                let signInExisting = body["mode"] == "sign_in_existing"
                 if let owner = userIDBySubject[subject] {
-                    if let bearerUserID, bearerUserID != owner {
+                    if deletedUserIDs.contains(owner) { return Self.error(410, "account_deleted") }
+                    if !signInExisting, let bearerUserID, bearerUserID != owner {
                         return Self.error(409, "credential_already_in_use")
                     }
                     return issue(for: owner)
                 }
+                if signInExisting { return Self.error(404, "account_not_found") }
                 let userID = bearerUserID ?? "user-\(UUID().uuidString.prefix(8))"
                 userIDBySubject[subject] = userID
                 let providers = (linkedProvidersByUserID[userID] ?? []).filter { $0 != "anonymous" } + [provider]
@@ -108,11 +112,23 @@ final class FakeWorker: @unchecked Sendable {
                 guard !failLegacyExchange, let idToken = body["idToken"] else {
                     return Self.error(401, "invalid_firebase_token")
                 }
-                return issue(for: idToken.replacingOccurrences(of: "firebase-token-", with: ""), providers: ["anonymous"])
+                let userID = idToken.replacingOccurrences(of: "firebase-token-", with: "")
+                if deletedUserIDs.contains(userID) { return Self.error(410, "account_deleted") }
+                return issue(for: userID, providers: ["anonymous"])
 
             case "/v1/auth/sign-out":
                 guard bearerUserID != nil else { return Self.error(401, "invalid_token") }
                 return (204, Data(), 0)
+
+            case let path where path.hasPrefix("/v1/auth/identities/"):
+                guard let bearerUserID else { return Self.error(401, "invalid_token") }
+                let provider = String(path.dropFirst("/v1/auth/identities/".count))
+                var providers = linkedProvidersByUserID[bearerUserID] ?? []
+                guard providers.contains(provider) else { return Self.error(404, "identity_not_linked") }
+                providers.removeAll { $0 == provider }
+                linkedProvidersByUserID[bearerUserID] = providers.isEmpty ? ["anonymous"] : providers
+                userIDBySubject = userIDBySubject.filter { !($0.key.hasPrefix("\(provider):") && $0.value == bearerUserID) }
+                return (200, try! JSONSerialization.data(withJSONObject: userJSON(bearerUserID)), 0)
 
             case "/v1/account":
                 guard bearerUserID != nil else { return Self.error(401, "invalid_token") }
@@ -141,16 +157,21 @@ final class FakeWorker: @unchecked Sendable {
         userIDByAccessToken[accessToken] = userID
         userIDByRefreshToken[refresh] = userID
         let json: [String: Any] = [
-            "user": [
-                "id": userID,
-                "linkedProviders": linkedProvidersByUserID[userID] ?? ["anonymous"],
-                "createdAt": 1_763_251_200_000
-            ],
+            "user": userJSON(userID),
             "accessToken": accessToken,
             "accessTokenExpiresAt": Int64((Date().timeIntervalSince1970 + accessTokenLifetime) * 1000),
             "refreshToken": refresh
         ]
         return (status, try! JSONSerialization.data(withJSONObject: json), delay)
+    }
+
+    // Called with the lock held.
+    private func userJSON(_ userID: String) -> [String: Any] {
+        [
+            "id": userID,
+            "linkedProviders": linkedProvidersByUserID[userID] ?? ["anonymous"],
+            "createdAt": 1_763_251_200_000
+        ]
     }
 
     private static func error(_ status: Int, _ reason: String) -> (status: Int, body: Data, delay: TimeInterval) {

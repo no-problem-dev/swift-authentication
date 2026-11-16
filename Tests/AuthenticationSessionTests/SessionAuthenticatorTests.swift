@@ -241,8 +241,76 @@ struct SessionAuthenticatorTests {
         let owner = try await authenticator.signIn(resolving: payload)
 
         #expect(owner.id == "owner-1")
-        #expect(worker.recorded.last?.authorization == nil, "resolving signs in; it does not link")
+        let resolving = try #require(worker.recorded.last { $0.path == "/v1/auth/apple" })
+        #expect(resolving.authorization == nil, "resolving signs in; it does not link")
+        #expect(resolving.body["mode"] == "sign_in_existing")
+        #expect(worker.paths.last == "POST /v1/auth/sign-out", "the previous user's device is revoked")
+        #expect(worker.recorded.last?.authorization == "Bearer access-1")
         #expect(await authenticator.currentUser()?.id == "owner-1")
+    }
+
+    @Test("unlinking removes the provider and keeps the user id and the tokens")
+    func unlinkKeepsUserID() async throws {
+        let worker = FakeWorker()
+        let store = InMemorySessionStore()
+        let authenticator = make(worker, store: store)
+        let anonymous = try await authenticator.establishSession()
+        _ = try await authenticator.link(with: apple)
+        let tokenBefore = try store.load()?.accessToken
+
+        let user = try await authenticator.unlink(.apple)
+
+        #expect(user.id == anonymous.id)
+        #expect(user.isAnonymous)
+        #expect(worker.paths.last == "DELETE /v1/auth/identities/apple")
+        #expect(try store.load()?.accessToken == tokenBefore)
+        #expect(await authenticator.currentUser() == user)
+    }
+
+    // MARK: - Existing accounts
+
+    @Test("signInExisting switches to the owning account without linking")
+    func signInExistingFound() async throws {
+        let worker = FakeWorker()
+        worker.seedAccount(userID: "owner-1", subject: "apple:apple-sub-1", provider: "apple")
+        let authenticator = make(worker)
+        try await authenticator.establishSession()
+
+        let user = try await authenticator.signInExisting(with: apple)
+
+        #expect(user?.id == "owner-1")
+        let request = try #require(worker.recorded.last { $0.path == "/v1/auth/apple" })
+        #expect(request.body["mode"] == "sign_in_existing")
+        #expect(request.authorization == nil)
+    }
+
+    @Test("signInExisting for a credential nobody uses returns nil and touches nothing")
+    func signInExistingNotFound() async throws {
+        let worker = FakeWorker()
+        let store = InMemorySessionStore()
+        let authenticator = make(worker, store: store)
+        let anonymous = try await authenticator.establishSession()
+        let before = try store.load()
+
+        let user = try await authenticator.signInExisting(with: apple)
+
+        #expect(user == nil)
+        #expect(try store.load() == before)
+        #expect(await authenticator.currentUser() == anonymous)
+        #expect(!worker.paths.contains("POST /v1/auth/sign-out"))
+    }
+
+    @Test("a deleted account is reported as accountDeleted")
+    func deletedAccountIsNamed() async throws {
+        let worker = FakeWorker()
+        worker.seedAccount(userID: "gone-1", subject: "apple:apple-sub-1", provider: "apple")
+        worker.update { $0.deletedUserIDs = ["gone-1"] }
+        let authenticator = make(worker)
+        try await authenticator.establishSession()
+
+        await #expect {
+            _ = try await authenticator.signInExisting(with: apple)
+        } throws: { ($0 as? AuthError)?.code == .accountDeleted }
     }
 
     @Test("linking with nobody signed in throws notAuthenticated without a request")
@@ -292,6 +360,20 @@ struct SessionAuthenticatorTests {
 
         #expect(user.id == "legacy-uid")
         #expect(!worker.paths.contains("POST /v1/auth/anonymous"))
+    }
+
+    @Test("a legacy session of a deleted account is forgotten and a new anonymous one opened")
+    func deletedLegacyAccountGoesAnonymous() async throws {
+        let worker = FakeWorker()
+        worker.update { $0.deletedUserIDs = ["legacy-uid"] }
+        let legacy = FakeLegacySource(token: "firebase-token-legacy-uid")
+        let authenticator = make(worker, legacySource: legacy)
+
+        let user = try await authenticator.establishSession()
+
+        #expect(user.id != "legacy-uid")
+        #expect(worker.paths == ["POST /v1/auth/firebase", "POST /v1/auth/anonymous"])
+        #expect(legacy.discardCount == 1)
     }
 
     @Test("a legacy source that cannot produce its token opens no anonymous account either")

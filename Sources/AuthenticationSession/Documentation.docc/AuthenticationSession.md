@@ -21,8 +21,7 @@ import AuthenticationApple
 
 let authenticator = SessionAuthenticator(
     baseURL: URL(string: "https://api.example.com")!,
-    installID: { InstallID.current },
-    accountDeletionPath: "v1/account"
+    installID: { InstallID.current }
 )
 let store = AuthenticationStore(
     authenticator: authenticator,
@@ -56,14 +55,18 @@ rejects the refresh token, the session is removed and the authenticator's stream
 |---|---|
 | Anonymous | `POST /v1/auth/anonymous` `{ installId }` |
 | Refresh | `POST /v1/auth/refresh` `{ refreshToken }` |
-| Apple | `POST /v1/auth/apple` `{ identityToken, installId }`, with a bearer to link |
-| Google | `POST /v1/auth/google` `{ idToken, installId }`, with a bearer to link |
+| Apple | `POST /v1/auth/apple` `{ identityToken, installId, mode }`, with a bearer to link |
+| Google | `POST /v1/auth/google` `{ idToken, installId, mode }`, with a bearer to link |
+| Unlink | `DELETE /v1/auth/identities/:provider`, bearer |
 | Legacy exchange | `POST /v1/auth/firebase` `{ idToken, installId }` |
 | Sign-out | `POST /v1/auth/sign-out`, bearer |
-| Deletion | `DELETE <accountDeletionPath>` `{ appleAuthorizationCode? }`, bearer |
+| Deletion | `DELETE /v1/account` (`accountDeletionPath:`) `{ appleAuthorizationCode? }`, bearer |
 
-A 409 from Apple or Google while linking becomes `AuthError.credentialAlreadyInUse`;
-``SessionAuthenticator/signIn(resolving:)`` signs in to the owning account with the same token.
+`mode` is `link_or_sign_in`, except for ``SessionAuthenticator/signInExisting(with:)`` and
+``SessionAuthenticator/signIn(resolving:)``, which send `sign_in_existing`: the server signs in
+to the account the token belongs to and creates nothing when there is none (404, returned as
+`nil`). A 409 while linking becomes `AuthError.credentialAlreadyInUse`; a 410 becomes
+`AuthError.accountDeleted`. Switching to another user revokes the previous session's device.
 
 ## Topics
 

@@ -54,8 +54,7 @@ struct MyApp: App {
     init() {
         authenticator = SessionAuthenticator(
             baseURL: URL(string: "https://api.example.com")!,   // 独自ドメイン。workers.dev は使わない
-            installID: { InstallID.current },                   // アプリが UserDefaults に持つ UUID
-            accountDeletionPath: "v1/account"
+            installID: { InstallID.current }                    // アプリが UserDefaults に持つ UUID
         )
         _store = State(initialValue: AuthenticationStore(
             authenticator: authenticator,
@@ -147,7 +146,22 @@ do {
 }
 ```
 
-衝突は、衝突した資格情報そのものを持つ。サーバーはトークンを署名で確かめるので、`signIn(resolving:)` は Apple のシートを出し直さずに、同じトークンでオーナーのアカウントにサインインする。その間にトークンの期限が切れていれば、ストアがプロバイダのシートを出して新しく取る。
+衝突は、衝突した資格情報そのものを持つ。サーバーはトークンを署名で確かめるので、`signIn(resolving:)` は Apple のシートを出し直さずに、同じトークンでオーナーのアカウントにサインインする。その間にトークンの期限が切れていれば、ストアがプロバイダのシートを出して新しく取る。別の人に切り替えたら、前のセッションの端末をサーバーで無効にする。
+
+`unlink(_:)` はつないだ手段を外す（`DELETE /v1/auth/identities/:provider`）。ユーザー ID は変わらない。
+
+### 持っているアカウントにサインインする
+
+「持っているアカウントに入る」画面では `signInExisting` を使う。`mode: "sign_in_existing"` を送り、その資格情報のアカウントがあればサインインする。無ければ何も作らず、何もつながず、今のセッションもそのまま。
+
+```swift
+let found = try await store.signInExisting(using: .apple)
+if !found { /* この Apple ID のアカウントはまだ無い */ }
+```
+
+### 消したアカウント
+
+消したアカウントには、サーバーが 410 `account_deleted` を返す。`AuthError.accountDeleted` として届く。消したアカウントの古いセッションは忘れ、代わりに新しい匿名のセッションを作る。
 
 ### サインアウト
 
@@ -155,7 +169,7 @@ do {
 
 ### アカウントの削除
 
-`store.deleteAccount()` は Bearer トークンを付けて `DELETE <accountDeletionPath>` を送り、サーバーが成功してからセッションを消す。Apple につないだアカウントなら、先に Apple のシートを出して新しい認可コードを取り、`{ "appleAuthorizationCode": … }` として送る。サーバーはこれで Apple のトークンを無効にする（審査ガイドライン 5.1.1(v)）。コードは1回きりで、5分ほどで切れるので、削除のときに取る。シートを閉じたら何も消さず、`AuthError.cancelled` を投げる。
+`store.deleteAccount()` は Bearer トークンを付けて `DELETE /v1/account`（`accountDeletionPath:` で変えられる）を送り、サーバーが成功してからセッションを消す。Apple につないだアカウントなら、先に Apple のシートを出して新しい認可コードを取り、`{ "appleAuthorizationCode": … }` として送る。サーバーはこれで Apple のトークンを無効にする（審査ガイドライン 5.1.1(v)）。コードは1回きりで、5分ほどで切れるので、削除のときに取る。シートを閉じたら何も消さず、`AuthError.cancelled` を投げる。
 
 ### 拡張とセッションを分け合う
 

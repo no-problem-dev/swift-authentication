@@ -18,6 +18,10 @@ final class MockAuthenticator: Authenticator {
     /// authenticator says it cannot use the collided credential again.
     var resolvedUser: AuthUser?
     var resolveError: (any Error)?
+    /// What `unlink(_:)` returns; `nil` makes it throw `notAuthenticated`.
+    var unlinkedUser: AuthUser?
+    /// What `signInExisting(with:)` finds; `nil` means no account owns the credential.
+    var existingUser: AuthUser?
     /// What `currentUser()` reports.
     var storedUser: AuthUser?
 
@@ -28,6 +32,8 @@ final class MockAuthenticator: Authenticator {
     private(set) var deletedWithAppleCodes: [String?] = []
     private(set) var linkedCredentials: [AuthCredential] = []
     private(set) var resolveCallCount = 0
+    private(set) var unlinkedProviders: [AuthProviderID] = []
+    private(set) var existingCredentials: [AuthCredential] = []
 
     private let continuation: AsyncStream<AuthUser?>.Continuation
     private let stream: AsyncStream<AuthUser?>
@@ -52,6 +58,18 @@ final class MockAuthenticator: Authenticator {
         if let linkError { throw linkError }
         guard let linkedUser else { throw AuthError.notAuthenticated }
         return linkedUser
+    }
+
+    func unlink(_ provider: AuthProviderID) async throws -> AuthUser {
+        unlinkedProviders.append(provider)
+        guard let unlinkedUser else { throw AuthError.notAuthenticated }
+        return unlinkedUser
+    }
+
+    func signInExisting(with credential: AuthCredential) async throws -> AuthUser? {
+        existingCredentials.append(credential)
+        if let existingUser { continuation.yield(existingUser) }
+        return existingUser
     }
 
     func signIn(resolving collision: CredentialCollision) async throws -> AuthUser {

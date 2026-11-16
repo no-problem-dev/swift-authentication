@@ -34,6 +34,27 @@ public protocol Authenticator: Sendable {
     ///   current session is left as it was.
     func link(with credential: AuthCredential) async throws -> AuthUser
 
+    /// Removes a provider from the signed-in account, keeping its user id.
+    ///
+    /// Like ``link(with:)`` it starts no new session, so ``authStateChanges()`` need not emit.
+    ///
+    /// - Parameter provider: The provider to remove.
+    /// - Returns: The same user, without the provider. With none left it is anonymous again.
+    /// - Throws: ``AuthError/notAuthenticated`` when nobody is signed in, and the server's
+    ///   error otherwise — including when the provider was not linked.
+    func unlink(_ provider: AuthProviderID) async throws -> AuthUser
+
+    /// Signs in to the account a credential already belongs to, and does nothing when there is
+    /// none: no account is created and nothing is linked.
+    ///
+    /// For a "sign in to my existing account" screen. ``signIn(with:)`` would create an account
+    /// for a credential nobody has used yet, and ``link(with:)`` would attach it to the current
+    /// one.
+    ///
+    /// - Returns: The user of the owning account, which replaces the current session, or `nil`
+    ///   when the credential belongs to no account — the current session is then untouched.
+    func signInExisting(with credential: AuthCredential) async throws -> AuthUser?
+
     /// Signs in to the account that owns a credential which failed to link.
     ///
     /// Switches the session to that account, so the user id changes.

@@ -189,11 +189,57 @@ struct AuthenticationStoreLinkTests {
         #expect(store.state == .authenticated(anonymous))
     }
 
+    // MARK: - Unlink and existing accounts
+
+    @Test("unlink republishes the same user without the provider")
+    func unlinkRepublishes() async throws {
+        let authenticator = MockAuthenticator(stubbedUser: linked)
+        authenticator.unlinkedUser = anonymous
+        let store = AuthenticationStore(authenticator: authenticator)
+        authenticator.emit(linked)
+        await waitUntil { store.state.isAuthenticated }
+
+        try await store.unlink(.apple)
+
+        #expect(authenticator.unlinkedProviders == [.apple])
+        #expect(store.state == .authenticated(anonymous))
+    }
+
+    @Test("signInExisting switches to the owning account when there is one")
+    func signInExistingFound() async throws {
+        let authenticator = MockAuthenticator(stubbedUser: anonymous)
+        authenticator.existingUser = existing
+        let provider = MockCredentialProvider(providerID: .apple, result: .success(appleCredential))
+        let store = await signedInStore(authenticator, providers: [provider])
+
+        let found = try await store.signInExisting(using: .apple)
+        await waitUntil { store.state.user == existing }
+
+        #expect(found)
+        #expect(authenticator.existingCredentials == [appleCredential])
+        #expect(authenticator.linkedCredentials.isEmpty, "nothing is linked on the way")
+        #expect(store.state == .authenticated(existing))
+    }
+
+    @Test("signInExisting reports false and keeps the session when no account owns the credential")
+    func signInExistingNotFound() async throws {
+        let authenticator = MockAuthenticator(stubbedUser: anonymous)
+        let provider = MockCredentialProvider(providerID: .apple, result: .success(appleCredential))
+        let store = await signedInStore(authenticator, providers: [provider])
+
+        let found = try await store.signInExisting(using: .apple)
+
+        #expect(!found)
+        #expect(authenticator.signInCallCount == 0)
+        #expect(store.state == .authenticated(anonymous))
+    }
+
     @Test("AuthError.code covers the collision and link cases")
     func codesForNewCases() {
         #expect(AuthError.credentialAlreadyInUse(CredentialCollision(credential: appleCredential)).code == .credentialAlreadyInUse)
         #expect(AuthError.linkFailed(TestError()).code == .linkFailed)
         #expect(AuthError.accountExistsWithDifferentProvider(provider: .apple, email: nil).code == .accountExistsWithDifferentProvider)
+        #expect(AuthError.accountDeleted.code == .accountDeleted)
     }
 }
 

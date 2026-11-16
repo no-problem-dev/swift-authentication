@@ -20,8 +20,15 @@ post-sign-in step, account deletion and the dependencies were all built around F
     and Google sign-in and linking (`/v1/auth/apple`, `/v1/auth/google`; a bearer token links),
     a 409 as `AuthError.credentialAlreadyInUse`, sign-out (`/v1/auth/sign-out`, then the
     keychain), deletion through the app's endpoint (`DELETE <accountDeletionPath>` with
-    `{ appleAuthorizationCode? }`), `currentUser()` from the keychain without a request,
-    `authStateChanges()`.
+    `{ appleAuthorizationCode? }`, `v1/account` unless `accountDeletionPath:` says otherwise),
+    `currentUser()` from the keychain without a request, `authStateChanges()`.
+  - `SessionAuthenticator.signInExisting(with:)` sends `mode: "sign_in_existing"` and returns
+    `nil` on 404 `account_not_found`, creating and linking nothing. `signIn(resolving:)` uses the
+    same mode. Switching to another user revokes the previous session's device at
+    `/v1/auth/sign-out`, best effort.
+  - `SessionAuthenticator.unlink(_:)` at `DELETE /v1/auth/identities/:provider`.
+  - A 410 `account_deleted` arrives as `AuthError.accountDeleted`; a legacy session of a deleted
+    account is forgotten and a new anonymous session opened.
   - `SessionAuthenticator.establishSession()` — the stored session, else a legacy session
     exchanged at `/v1/auth/firebase`, else a new anonymous one. A failed legacy exchange throws
     and never opens an anonymous account in its place.
@@ -32,6 +39,10 @@ post-sign-in step, account deletion and the dependencies were all built around F
     optional access group), `InMemorySessionStore`, `SessionServerError`,
     `SessionCredentialError`.
   - Requests time out after 20 seconds unless `requestTimeout:` says otherwise.
+- `Authenticator.unlink(_:)` and `Authenticator.signInExisting(with:)`, with
+  `AuthenticationStore.unlink(_:)` and `AuthenticationStore.signInExisting(using:)`. A "sign in
+  to my existing account" screen no longer needs to link and unlink again to find out.
+- `AuthError.accountDeleted`.
 - `LegacySessionSource` in `Authentication`: the session an earlier version of the app left on the
   device, for the server to exchange. `swift-authentication-firebase` ships the Firebase one.
 - `AuthenticationStore.deleteAccount()` asks Apple for a fresh authorization code first when the
@@ -84,6 +95,9 @@ post-sign-in step, account deletion and the dependencies were all built around F
 | `authenticator.deleteAccount()` | `authenticator.deleteAccount(appleAuthorizationCode:)`, or `store.deleteAccount()` |
 | `revokeAppleToken(authorizationCode:)` before deleting | `store.deleteAccount()`; the server revokes with the code it receives |
 | `AccountDeletion.deleteAccount(of:)` | `deleteAccount(of:appleAuthorizationCode:)` |
+| Your own `Authenticator` | Also implement `unlink(_:)` and `signInExisting(with:)` |
+| Link, then unlink when the account turned out to be new | `store.signInExisting(using:)` |
+| An exhaustive `switch` over `AuthError` | Add `.accountDeleted` |
 | `FirebaseConfigurator.googleClientID` for `GoogleCredentialProvider` | The client ID from `Info.plist` |
 
 ## [10.2.1] - 2026-11-08

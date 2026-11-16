@@ -59,6 +59,11 @@ public enum AuthError: Error {
     /// one that was attempted, and `email` the address the server reported, when it did — show
     /// it so the person knows which account is meant.
     case accountExistsWithDifferentProvider(provider: AuthProviderID, email: String?)
+    /// The account was deleted. Signing in to it again is not possible; start a new one.
+    ///
+    /// The server answers 410 for a deleted account's tokens, and when a credential or an
+    /// earlier session that belonged to it is exchanged.
+    case accountDeleted
     /// An operation that needs a signed-in user was requested while there was none.
     case notAuthenticated
     /// Required setup is missing or wrong — an unset client ID, no window to present from.
@@ -80,6 +85,7 @@ extension AuthError {
         case credentialAlreadyInUse
         case linkFailed
         case accountExistsWithDifferentProvider
+        case accountDeleted
         case notAuthenticated
         case configuration
     }
@@ -101,6 +107,7 @@ extension AuthError {
         case .credentialAlreadyInUse: .credentialAlreadyInUse
         case .linkFailed: .linkFailed
         case .accountExistsWithDifferentProvider: .accountExistsWithDifferentProvider
+        case .accountDeleted: .accountDeleted
         case .notAuthenticated: .notAuthenticated
         case .configuration: .configuration
         }
